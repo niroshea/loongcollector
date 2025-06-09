@@ -15,6 +15,8 @@
 package rename
 
 import (
+	"fmt"
+
 	"github.com/alibaba/ilogtail/pkg/helper"
 	"github.com/alibaba/ilogtail/pkg/logger"
 	"github.com/alibaba/ilogtail/pkg/models"
@@ -156,4 +158,8 @@ func TestNoKeyErrorV2(t *testing.T) {
 	memoryLog, ok := logger.ReadMemoryLog(1)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(memoryLog, "RENAME_FIND_ALARM\tcannot find key [b]"), "got: %s", memoryLog)
+}
+
+func TestX001(t *testing.T) {
+	fmt.Println(genTopicName("ym-sgp-prod", "hpcarc"))
 }

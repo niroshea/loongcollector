@@ -62,6 +62,7 @@ func (p *ProcessorRename) Init(context pipeline.Context) error {
 		}
 		p.noKeyErrorArray = make([]string, len(p.SourceKeys))
 	}
+	//tTags()
 	return nil
 }
 
@@ -77,6 +78,7 @@ func (p *ProcessorRename) ProcessLogs(logArray []*protocol.Log) []*protocol.Log 
 }
 
 func (p *ProcessorRename) processLog(log *protocol.Log) {
+	genLogTopic(log)
 	if p.NoKeyError {
 		p.noKeyErrorArray = p.noKeyErrorArray[:0]
 		for k := range p.existKeyDictionary {
@@ -124,6 +126,7 @@ func (p *ProcessorRename) Process(in *models.PipelineGroupEvents, context pipeli
 
 func (p *ProcessorRename) processLogEvent(logEvent *models.Log) {
 	contents := logEvent.GetIndices()
+	//contents.Add(TopicKey, getIndex(contents.Get(NamespaceKey), contents.Get(ContainerKey)))
 	for oldKey, newKey := range p.keyDictionary {
 		if contents.Contains(oldKey) {
 			contents.Add(newKey, contents.Get(oldKey))
@@ -136,6 +139,7 @@ func (p *ProcessorRename) processLogEvent(logEvent *models.Log) {
 
 func (p *ProcessorRename) processOtherEvent(event models.PipelineEvent) {
 	tags := event.GetTags()
+	//tags.Add(TopicKey, getIndex(tags.Get(NamespaceKey), tags.Get(ContainerKey)))
 	for oldKey, newKey := range p.keyDictionary {
 		if tags.Contains(oldKey) {
 			tags.Add(newKey, tags.Get(oldKey))
@@ -144,6 +148,24 @@ func (p *ProcessorRename) processOtherEvent(event models.PipelineEvent) {
 			p.noKeyErrorArray = append(p.noKeyErrorArray, oldKey)
 		}
 	}
+}
+
+func genLogTopic(log *protocol.Log) {
+	var xNamespace, xContainer string
+	for _, content := range log.Contents {
+		switch content.Key {
+		case _NamespaceKey:
+			xNamespace = content.Value
+		case _ContainerKey:
+			xContainer = content.Value
+		case _ContentKey:
+			content.Value = truncateUTF8Safe(content.Value) // 日志文本太长截断
+		}
+	}
+	log.Contents = append(log.Contents, &protocol.Log_Content{
+		Key:   TopicKey,
+		Value: genTopicName(xNamespace, xContainer),
+	})
 }
 
 func init() {

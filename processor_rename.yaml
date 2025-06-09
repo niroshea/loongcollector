@@ -1,0 +1,16 @@
+project:
+  convergence:
+    log_group1:
+      retention: 14
+      apps:
+        - hpcarc
+        - ccfmss
+        - hccvims
+        - ccfres
+        - hpcvmsres
+        - hccacs
+  ym:
+    log_group2:
+      retention: 14
+      apps:
+        - app7

@@ -1,0 +1,51 @@
+enable: true
+inputs:
+  - Type: service_docker_stdout
+    BeginLineRegex: \d{4}-\d{2}-\d{2}
+    BeginLineCheckLength: 12
+
+processors:
+  - Type: processor_regex
+    SourceKey: content
+    Regex: \d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\S+)?\s+(\w+)
+    NoMatchError: false
+    KeepSource: true
+    Keys:
+      - "level"
+
+  - Type: processor_drop
+    DropKeys:
+      - "_source_"
+      - "_pod_uid_"
+      - "_container_ip_"
+      - "_image_name_"
+      - "__time__"
+
+  - Type: processor_rename
+    SourceKeys:
+      - "_time_"
+      - "_container_name_"
+      - "_pod_name_"
+      - "_namespace_"
+      - "content"
+    DestKeys:
+      - "@timestamp"
+      - "container"
+      - "pod"
+      - "namespace"
+      - "message"
+
+flushers:
+  - Type: flusher_elasticsearch
+    Addresses:
+      - http://10.210.0.140:9200
+    Convert:
+      Protocol: custom_single_flatten
+      Encoding: json
+      TagFieldsRename:
+        "__host_ip__": node
+    Index: "%{content.topic}"
+    Authentication:
+      PlainText:
+        Username: elastic
+        Password: TE3h1xA7xsjypIrM+DJF
