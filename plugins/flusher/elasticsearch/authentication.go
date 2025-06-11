@@ -16,6 +16,7 @@ package elasticsearch
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -46,7 +47,14 @@ func (config *Authentication) ConfigureAuthenticationAndHTTP(httpcfg *HTTPConfig
 		}
 	}
 
-	transport := &http.Transport{}
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		DisableKeepAlives:  false,
+		DisableCompression: false,
+	}
 	if config.TLS != nil {
 		tlsConfig, err := config.TLS.LoadTLSConfig()
 		if err != nil {

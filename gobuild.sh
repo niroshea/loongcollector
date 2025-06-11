@@ -17,3 +17,18 @@ rm -rf plugins/all/all.go
 rm -rf plugins/all/all_debug.go
 rm -rf plugins/all/all_windows.go
 rm -rf plugins/all/all_linux.go
+
+
+make plugin_local
+
+cp tihuan.dockerfile output/
+
+cd output/ || exit
+
+pwd
+
+imageTag=hpc-sgp-uat-jcr-aliyun.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t$1
+
+docker build -t $imageTag  -f tihuan.dockerfile .
+
+docker push $imageTag
