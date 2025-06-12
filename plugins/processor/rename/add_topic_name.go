@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -35,8 +36,9 @@ const (
 	DefaultMapKey  = "__default_key__"
 	TimeFormat     = "2006-01-02_15-04-05"
 	TopicKey       = "topic"
-	NamespaceKey   = "_namespace_"
-	ContainerKey   = "_container_name_"
+	_NamespaceKey  = "_namespace_"
+	_ContainerKey  = "_container_name_"
+	_ContentKey    = "content"
 )
 
 func init() {
@@ -95,4 +97,19 @@ func topicConfig() *ProjConfig {
 
 func tTags2() {
 	os.WriteFile("/usr/local/loongcollector/shebinbin_1_"+time.Now().Format(TimeFormat)+".log", []byte(allErrInfo.String()), 0755)
+}
+
+// truncateUTF8Safe 截取 UTF-8 字符串的前 n 个字节，确保不截断字符。
+func truncateUTF8Safe(s string, maxBytes int) string {
+	// if maxBytes < 1 {
+	// 	return ""
+	// }
+	if len(s) <= maxBytes {
+		return s
+	}
+	end := maxBytes
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end]
 }
