@@ -118,11 +118,9 @@ func truncateUTF8Safe(s string) string {
 	return s[:end] + _SuffixTruncate
 }
 
-var levelRegex = regexp.MustCompile(`\b(INFO|info|WARN|warn|ERROR|error|DEBUG|debug)\b`)
-
 func getLogLevel(logContent string) string {
-	if ret := levelRegex.FindString(shortLog(logContent)); ret != "" {
-		return strings.ToUpper(ret)
+	if level, ok := levelMap[levelRegex.FindString(shortLog(logContent))]; ok {
+		return level
 	}
 	return "NULL"
 }
@@ -136,4 +134,33 @@ func shortLog(s string) string {
 		end--
 	}
 	return s[:end]
+}
+
+var levelRegex *regexp.Regexp
+
+func init() {
+	var levelRegexArr []string
+	for k := range levelMap {
+		levelRegexArr = append(levelRegexArr, k)
+	}
+
+	levelRegex = regexp.MustCompile(`\b(` + strings.Join(levelRegexArr, "|") + `)\b`)
+}
+
+var levelMap = map[string]string{
+	"INFO": "INFO",
+	"INF":  "INFO",
+	"info": "INFO",
+	//
+	"WARN": "WARN",
+	"WRN":  "WARN",
+	"warn": "WARN",
+	//
+	"ERROR": "ERROR",
+	"ERR":   "ERROR",
+	"error": "ERROR",
+	//
+	"DEBUG": "DEBUG",
+	"DBG":   "DEBUG",
+	"debug": "DEBUG",
 }
