@@ -162,4 +162,6 @@ func TestNoKeyErrorV2(t *testing.T) {
 
 func TestX001(t *testing.T) {
 	fmt.Println(genTopicName("ym-sgp-prod", "hpcarc"))
+
+	fmt.Println(getLogLevel("2025-06-13 15:38:30.584          service/12_local_hiklink.go:130"))
 }

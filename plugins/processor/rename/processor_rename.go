@@ -151,7 +151,7 @@ func (p *ProcessorRename) processOtherEvent(event models.PipelineEvent) {
 }
 
 func genLogTopic(log *protocol.Log) {
-	var xNamespace, xContainer string
+	var xNamespace, xContainer, xLevel string
 	for _, content := range log.Contents {
 		switch content.Key {
 		case _NamespaceKey:
@@ -160,11 +160,15 @@ func genLogTopic(log *protocol.Log) {
 			xContainer = content.Value
 		case _ContentKey:
 			content.Value = truncateUTF8Safe(content.Value) // 日志文本太长截断
+			xLevel = getLogLevel(content.Value)
 		}
 	}
 	log.Contents = append(log.Contents, &protocol.Log_Content{
-		Key:   TopicKey,
+		Key:   _TopicKey,
 		Value: genTopicName(xNamespace, xContainer),
+	}, &protocol.Log_Content{
+		Key:   _LevelKey,
+		Value: xLevel,
 	})
 }
 

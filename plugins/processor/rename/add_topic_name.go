@@ -35,7 +35,7 @@ const (
 	DefaultProject = "convergence"
 	DefaultMapKey  = "__default_key__"
 	TimeFormat     = "2006-01-02_15-04-05"
-	TopicKey       = "topic"
+	_TopicKey      = "topic"
 	_NamespaceKey  = "_namespace_"
 	_ContainerKey  = "_container_name_"
 	_ContentKey    = "content"
@@ -102,6 +102,8 @@ func tTags2() {
 const (
 	_LogTruncateLen int    = 256 * 1024 // 256KB
 	_SuffixTruncate string = "...MaxByte_256KB_CutOff"
+	//
+	_LevelKey string = "level"
 )
 
 // truncateUTF8Safe 截取 UTF-8 字符串的前 n 个字节，确保不截断字符。
@@ -114,4 +116,24 @@ func truncateUTF8Safe(s string) string {
 		end--
 	}
 	return s[:end] + _SuffixTruncate
+}
+
+var levelRegex = regexp.MustCompile(`\b(INFO|info|WARN|warn|ERROR|error|DEBUG|debug)\b`)
+
+func getLogLevel(logContent string) string {
+	if ret := levelRegex.FindString(shortLog(logContent)); ret != "" {
+		return strings.ToUpper(ret)
+	}
+	return "NULL"
+}
+
+func shortLog(s string) string {
+	if len(s) <= 50 {
+		return s
+	}
+	end := 50
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end]
 }
