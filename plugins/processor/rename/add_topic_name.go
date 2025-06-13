@@ -99,17 +99,19 @@ func tTags2() {
 	os.WriteFile("/usr/local/loongcollector/shebinbin_1_"+time.Now().Format(TimeFormat)+".log", []byte(allErrInfo.String()), 0755)
 }
 
+const (
+	_LogTruncateLen int    = 256 * 1024 // 256KB
+	_SuffixTruncate string = "...MaxByte_256KB_CutOff"
+)
+
 // truncateUTF8Safe 截取 UTF-8 字符串的前 n 个字节，确保不截断字符。
-func truncateUTF8Safe(s string, maxBytes int) string {
-	// if maxBytes < 1 {
-	// 	return ""
-	// }
-	if len(s) <= maxBytes {
+func truncateUTF8Safe(s string) string {
+	if len(s) <= _LogTruncateLen {
 		return s
 	}
-	end := maxBytes
+	end := _LogTruncateLen
 	for end > 0 && !utf8.RuneStart(s[end]) {
 		end--
 	}
-	return s[:end]
+	return s[:end] + _SuffixTruncate
 }

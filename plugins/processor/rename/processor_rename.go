@@ -150,11 +150,6 @@ func (p *ProcessorRename) processOtherEvent(event models.PipelineEvent) {
 	}
 }
 
-const (
-	_LogTruncateLen int    = 128 * 1024 // 128KB
-	_SuffixTruncate string = "...MaxByte_128KB_CutOff"
-)
-
 func genLogTopic(log *protocol.Log) {
 	var xNamespace, xContainer string
 	for _, content := range log.Contents {
@@ -164,7 +159,7 @@ func genLogTopic(log *protocol.Log) {
 		case _ContainerKey:
 			xContainer = content.Value
 		case _ContentKey:
-			content.Value = truncateUTF8Safe(content.Value, _LogTruncateLen) + _SuffixTruncate // 日志文本太长截断
+			content.Value = truncateUTF8Safe(content.Value) // 日志文本太长截断
 		}
 	}
 	log.Contents = append(log.Contents, &protocol.Log_Content{
