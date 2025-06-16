@@ -117,6 +117,7 @@ func (f *FlusherElasticSearch) Init(context pipeline.Context) error {
 	cfg := elasticsearch.Config{
 		Addresses:           f.Addresses,
 		CompressRequestBody: true, // 启用 Gzip
+		PoolCompressor:      true, // a sync.Pool based gzip writer is used
 	}
 	if err = f.Authentication.ConfigureAuthenticationAndHTTP(f.HTTPConfig, &cfg); err != nil {
 		err = fmt.Errorf("configure authenticationfailed, err: %w", err)
