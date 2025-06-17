@@ -18,6 +18,7 @@ rm -rf plugins/all/all_debug.go
 rm -rf plugins/all/all_windows.go
 rm -rf plugins/all/all_linux.go
 
+go mod tidy
 
 make plugin_local
 

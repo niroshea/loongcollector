@@ -60,7 +60,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 		bulkAction = f.Action
 	}
 	//
-	f.indexKeys = append(f.indexKeys, contentContainerKey, contentNamespaceKey, contentPodNameKey, tagNodeIPKey)
+	f.indexKeys = append(f.indexKeys, contentContainerKey, contentNamespaceKey, tagNodeIPKey)
 	//
 	nowTime := time.Now().Local()
 	for _, logGroup := range logGroupList {
@@ -85,7 +85,8 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			meta := []byte(`{"` + bulkAction + `": {"_index": "` + *esIndex + `"}}` + "\n")
 			log = append(log, "\n"...)
 			logLen := len(meta) + len(log)
-			appDataLenAdd(valueMap, uint64(logLen)) // 写入数据计数
+			//
+			pMetrics.Register(valueMap).counter.Add(float64(logLen)) // 写入数据计数
 			//
 			bulkBuf.Grow(logLen)
 			bulkBuf.Write(meta)
