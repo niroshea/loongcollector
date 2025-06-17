@@ -3,7 +3,6 @@ package elasticsearch
 import (
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +21,19 @@ const (
 	tagNodeIPKey               = targetTagPrefix + tagHostIP
 	spaceStr            string = " "
 )
+
+var (
+	ncMap = NewConcurrentMap()
+)
+
+func appDataLenAdd(valueMap map[string]string, dataLen uint64) {
+	key := xKey(valueMap)
+	ptr, ok := ncMap.Get(key)
+	if !ok {
+		ptr = ncMap.Regist(key)
+	}
+	atomic.AddUint64(ptr, dataLen)
+}
 
 // 定义一个全局 CounterVec
 var bytesWritten = prometheus.NewCounterVec(
@@ -59,67 +71,18 @@ func xKeys(key string) (container, namespace, pod, node string, ok bool) {
 	return vlist[0], vlist[1], vlist[2], vlist[3], true
 }
 
-var safeCountMap = NewSafeMap()
-
-// 注册一个标签组合（并初始化局部计数器）
-func appDataLenAdd(valueMap map[string]string, dataLen uint64) {
-	key := xKey(valueMap)
-	cPtr := safeCountMap.Get(key)
-	if cPtr == nil {
-		cPtr = safeCountMap.Regist(key)
-	}
-	atomic.AddUint64(cPtr, dataLen)
-}
-
 func flushToPrometheus() {
 	ticker := time.NewTicker(10 * time.Second)
 	for range ticker.C {
-		for _, key := range safeCountMap.Keys() {
+		ncMap.Range(func(key string, val *uint64) {
 			container, namespace, pod, node, ok := xKeys(key)
-			if !ok {
-				continue
+			if !ok || val == nil {
+				return
 			}
-			delta := atomic.LoadUint64(safeCountMap.Get(key))
+			delta := atomic.LoadUint64(val)
 			if delta > 0 {
 				bytesWritten.WithLabelValues(container, namespace, pod, node).Add(float64(delta))
 			}
-		}
+		})
 	}
-}
-
-type SafeMap struct {
-	mu sync.RWMutex
-	m  map[string]*uint64
-}
-
-func NewSafeMap() *SafeMap {
-	return &SafeMap{m: make(map[string]*uint64)}
-}
-
-func (sm *SafeMap) Get(key string) *uint64 {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
-	return sm.m[key]
-}
-
-func (sm *SafeMap) Regist(key string) *uint64 {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	if sm.m[key] == nil {
-		sm.m[key] = new(uint64)
-	}
-	return sm.m[key]
-}
-
-func (sm *SafeMap) Keys() []string {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
-	keys := make([]string, 0, len(sm.m))
-	for k := range sm.m {
-		keys = append(keys, k)
-	}
-	return keys
 }
