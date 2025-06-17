@@ -59,6 +59,9 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 	if f.Action != "" {
 		bulkAction = f.Action
 	}
+	//
+	f.indexKeys = append(f.indexKeys, contentContainerKey, contentNamespaceKey, contentPodNameKey, tagNodeIPKey)
+	//
 	nowTime := time.Now().Local()
 	for _, logGroup := range logGroupList {
 		logger.Debug(f.context.GetRuntimeContext(), "[LogGroup] topic", logGroup.Topic, "logstore", logGroup.Category, "logcount", len(logGroup.Logs), "tags", logGroup.LogTags)
@@ -69,10 +72,10 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 		}
 		var bulkBuf bytes.Buffer
 		var batchBytes int
-		for index, log := range serializedLogs.([][]byte) {
+		for idx, log := range serializedLogs.([][]byte) { // 遍历每条日志，处理单条日志的写入
 			esIndex := &f.Index
+			valueMap := values[idx]
 			if f.isDynamicIndex {
-				valueMap := values[index]
 				esIndex, err = fmtstr.FormatIndex(valueMap, f.Index, uint32(nowTime.Unix()))
 				if err != nil {
 					logger.Error(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "ERROR flush elasticsearch format index fail, error", err)
@@ -82,6 +85,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			meta := []byte(`{"` + bulkAction + `": {"_index": "` + *esIndex + `"}}` + "\n")
 			log = append(log, "\n"...)
 			logLen := len(meta) + len(log)
+			appDataLenAdd(valueMap, uint64(logLen)) // 写入数据计数
 			//
 			bulkBuf.Grow(logLen)
 			bulkBuf.Write(meta)
