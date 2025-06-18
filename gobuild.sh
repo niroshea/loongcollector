@@ -28,7 +28,7 @@ cd output/ || exit
 
 pwd
 
-imageTag=hpc-sgp-uat-jcr-aliyun.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t$1
+imageTag=hpc-sgp-prod-jcr-aliyun.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t$1
 
 docker build -t $imageTag  -f tihuan.dockerfile .
 
