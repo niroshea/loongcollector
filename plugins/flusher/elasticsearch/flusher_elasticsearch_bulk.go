@@ -86,7 +86,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			log = append(log, "\n"...)
 			logLen := len(meta) + len(log)
 			//
-			pMetrics.Register(valueMap).counter.Add(float64(logLen)) // 写入数据计数
+			sendMetricsData(valueMap, logLen)
 			//
 			bulkBuf.Grow(logLen)
 			bulkBuf.Write(meta)
