@@ -17,3 +17,4 @@ project:
 
 es_bulk_config:
   goroutine: 15
+  batch_size_mb: 12

@@ -24,6 +24,7 @@ type BlukConfig struct {
 }
 type GoroutineConf struct {
 	GoThreadNum int `yaml:"goroutine"`
+	BatchSizeMB int `yaml:"batch_size_mb"`
 }
 
 // 读取配置文件信息
@@ -65,6 +66,7 @@ func (f *FlusherElasticSearch) handleBufChan() {
 	if goThreadNum < 2 {
 		goThreadNum = 10
 	}
+	log.Println("es bulk goroutine number:", goThreadNum)
 	for range goThreadNum {
 		go func() {
 			for v := range bufChan {
@@ -78,8 +80,19 @@ func (f *FlusherElasticSearch) handleBufChan() {
 }
 
 const (
-	maxBatchBytes = 12 * 1024 * 1024 // 12MB
+	MB int = 1024 * 1024 // 1MB
 )
+
+var maxBatchBytes = getMaxBatchSize()
+
+func getMaxBatchSize() int {
+	bsize := bulkconf.EsBlukConfig.BatchSizeMB
+	if bsize < 3 {
+		bsize = 10
+	}
+	log.Println("es bulk size(MB):", bsize)
+	return bsize * MB
+}
 
 // var compressed bytes.Buffer
 // var gw = gzip.NewWriter(&compressed)
