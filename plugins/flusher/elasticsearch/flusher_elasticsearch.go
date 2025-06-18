@@ -130,6 +130,8 @@ func (f *FlusherElasticSearch) Init(context pipeline.Context) error {
 		logger.Error(f.context.GetRuntimeContext(), "FLUSHER_INIT_ALARM", "create elasticsearch client error", err)
 		return err
 	}
+	// 多线程处理
+	f.handleBufChan()
 	return nil
 }
 

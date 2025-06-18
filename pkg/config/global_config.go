@@ -78,7 +78,7 @@ func newGlobalConfig() (cfg GlobalConfig) {
 		AggregatIntervalMs:                        3000,
 		FlushIntervalMs:                           3000,
 		DefaultLogQueueSize:                       1000,
-		DefaultLogGroupQueueSize:                  400,
+		DefaultLogGroupQueueSize:                  50,
 		LoongCollectorConfDir:                     "./conf/",
 		LoongCollectorLogConfDir:                  "./conf/",
 		LoongCollectorLogDir:                      "./log/",

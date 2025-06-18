@@ -14,3 +14,6 @@ project:
       retention: 14
       apps:
         - app7
+
+es_bulk_config:
+  goroutine: 15

@@ -54,7 +54,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/smartystreets/goconvey v1.7.2
 	github.com/streadway/handy v0.0.0-20230327021402-6a47ec586270
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/syndtr/goleveldb v0.0.0-20170725064836-b89cc31ef797
 	github.com/xdg-go/scram v1.1.2
 	go.opentelemetry.io/collector/consumer v0.66.0
@@ -257,7 +257,7 @@ require (
 	golang.org/x/mod v0.13.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/oauth2 v0.5.0 // indirect
-	golang.org/x/sync v0.6.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/term v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect

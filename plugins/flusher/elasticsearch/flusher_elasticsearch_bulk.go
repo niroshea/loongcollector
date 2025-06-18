@@ -4,14 +4,78 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/alibaba/ilogtail/pkg/fmtstr"
 	"github.com/alibaba/ilogtail/pkg/logger"
 	"github.com/alibaba/ilogtail/pkg/protocol"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"gopkg.in/yaml.v3"
 )
+
+var bulkconf = getConfig()
+
+type BlukConfig struct {
+	EsBlukConfig GoroutineConf `yaml:"es_bulk_config"`
+}
+type GoroutineConf struct {
+	GoThreadNum int `yaml:"goroutine"`
+}
+
+// 读取配置文件信息
+func getConfig() *BlukConfig {
+	var config BlukConfig
+	data, err := os.ReadFile("/usr/local/loongcollector/conf/continuous_pipeline_config/local/processor_rename.yaml")
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	return &config
+}
+
+var bufferPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
+func getBuffer() *bytes.Buffer {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	return buf
+}
+
+func putBuffer(buf *bytes.Buffer) {
+	bufferPool.Put(buf)
+}
+
+var bufChan = make(chan *bytes.Buffer, 100)
+
+func (f *FlusherElasticSearch) handleBufChan() {
+	goThreadNum := bulkconf.EsBlukConfig.GoThreadNum
+	if goThreadNum < 2 {
+		goThreadNum = 10
+	}
+	for range goThreadNum {
+		go func() {
+			for v := range bufChan {
+				if err := f.sendBulk(v); err != nil {
+					logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
+				}
+				putBuffer(v)
+			}
+		}()
+	}
+}
 
 const (
 	maxBatchBytes = 12 * 1024 * 1024 // 12MB
@@ -67,7 +131,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			logger.Error(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "flush elasticsearch convert log fail, error", err)
 			return err
 		}
-		var bulkBuf bytes.Buffer
+		bulkBuf := getBuffer()
 		var batchBytes int
 		for index, log := range serializedLogs.([][]byte) {
 			esIndex := &f.Index
@@ -89,88 +153,21 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			//
 			batchBytes += logLen
 			if batchBytes >= maxBatchBytes {
-				if err := f.sendBulk(&bulkBuf); err != nil {
-					logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
-				}
-				bulkBuf.Reset()
+				// if err := f.sendBulk(&bulkBuf); err != nil {
+				// 	logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
+				// }
+				// bulkBuf.Reset()
+				bufChan <- bulkBuf
 				batchBytes = 0
 			}
 		}
 		// Flush the remaining data
 		if bulkBuf.Len() > 0 {
-			if err := f.sendBulk(&bulkBuf); err != nil {
-				logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Final bulk send failed: %s", err)
-			}
+			// if err := f.sendBulk(&bulkBuf); err != nil {
+			// 	logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Final bulk send failed: %s", err)
+			// }
+			bufChan <- bulkBuf
 		}
 	}
 	return nil
 }
-
-// func (f *FlusherElasticSearch) createBulkIndexer(indexName string) esutil.BulkIndexer {
-// 	ret, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
-// 		Client:        f.esClient,
-// 		Index:         indexName, // 数据流名称
-// 		NumWorkers:    4,
-// 		FlushBytes:    12 * 1024 * 1024, // 每 12MB flush 一次
-// 		FlushInterval: 30 * time.Second, // 或每 30 秒 flush
-// 	})
-// 	if err != nil {
-// 		logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Error creating the indexer: %s", err)
-// 		return nil
-// 	}
-// 	return ret
-// }
-
-// var bulkIndexersMap sync.Map
-
-// func (f *FlusherElasticSearch) getbulkIndexer(indexName string) (ret esutil.BulkIndexer) {
-// 	if ret, ok := bulkIndexersMap.Load(indexName); ok && (ret != nil) {
-// 		return ret.(esutil.BulkIndexer)
-// 	}
-// 	ret = f.createBulkIndexer(indexName)
-// 	bulkIndexersMap.Store(indexName, ret)
-// 	return
-// }
-
-// func (f *FlusherElasticSearch) Flush3(projectName string, logstoreName string, configName string, logGroupList []*protocol.LogGroup) error {
-// 	bulkAction := "create"
-// 	if f.Action != "" {
-// 		bulkAction = f.Action
-// 	}
-// 	nowTime := time.Now().Local()
-// 	for _, logGroup := range logGroupList {
-// 		logger.Debug(f.context.GetRuntimeContext(), "[LogGroup] topic", logGroup.Topic, "logstore", logGroup.Category, "logcount", len(logGroup.Logs), "tags", logGroup.LogTags)
-// 		serializedLogs, values, err := f.converter.ToByteStreamWithSelectedFields(logGroup, f.indexKeys)
-// 		if err != nil {
-// 			logger.Error(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "flush elasticsearch convert log fail, error", err)
-// 			return err
-// 		}
-
-// 		for index, log := range serializedLogs.([][]byte) {
-// 			esIndex := &f.Index
-// 			if f.isDynamicIndex {
-// 				valueMap := values[index]
-// 				esIndex, err = fmtstr.FormatIndex(valueMap, f.Index, uint32(nowTime.Unix()))
-// 				if err != nil {
-// 					logger.Error(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "ERROR flush elasticsearch format index fail, error", err)
-// 					return err
-// 				}
-// 			}
-// 			err := f.getbulkIndexer(*esIndex).Add(context.Background(), esutil.BulkIndexerItem{
-// 				Action: bulkAction,
-// 				Body:   bytes.NewReader(log),
-// 				OnFailure: func(ctx context.Context, item esutil.BulkIndexerItem, resp esutil.BulkIndexerResponseItem, err error) {
-// 					if err != nil {
-// 						logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "[%s] Error: %v", *esIndex, err)
-// 					} else {
-// 						logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "[%s] Index error: %s - %s", *esIndex, resp.Error.Type, resp.Error.Reason)
-// 					}
-// 				},
-// 			})
-// 			if err != nil {
-// 				logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "getbulkIndexer Add func err: %v", err)
-// 			}
-// 		}
-// 	}
-// 	return nil
-// }
