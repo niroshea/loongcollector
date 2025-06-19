@@ -16,7 +16,11 @@ package config
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"runtime"
+
+	"gopkg.in/yaml.v3"
 )
 
 // GlobalConfig represents global configurations of plugin system.
@@ -72,13 +76,14 @@ var BaseVersion = "0.1.0"                                                  // wi
 var UserAgent = fmt.Sprintf("ilogtail/%v (%v)", BaseVersion, runtime.GOOS) // set in global config
 
 func newGlobalConfig() (cfg GlobalConfig) {
+	logQue, logGrpQue := getQueSize()
 	cfg = GlobalConfig{
 		InputMaxFirstCollectDelayMs:               10000, // 10s
 		InputIntervalMs:                           1000,  // 1s
 		AggregatIntervalMs:                        3000,
 		FlushIntervalMs:                           3000,
-		DefaultLogQueueSize:                       1000,
-		DefaultLogGroupQueueSize:                  50,
+		DefaultLogQueueSize:                       logQue,
+		DefaultLogGroupQueueSize:                  logGrpQue,
 		LoongCollectorConfDir:                     "./conf/",
 		LoongCollectorLogConfDir:                  "./conf/",
 		LoongCollectorLogDir:                      "./log/",
@@ -93,4 +98,42 @@ func newGlobalConfig() (cfg GlobalConfig) {
 		DelayStopSec:                              300,
 	}
 	return
+}
+
+var bulkconf = getConfig()
+
+type BlukConfig struct {
+	EsBlukConfig GoroutineConf `yaml:"es_bulk_config"`
+}
+type GoroutineConf struct {
+	DefaultLogQueueSize      int `yaml:"default_log_queue_size"`
+	DefaultLogGroupQueueSize int `yaml:"default_loggroup_queue_size"`
+}
+
+func getQueSize() (logQue, logGrpQue int) {
+	logQue = bulkconf.EsBlukConfig.DefaultLogQueueSize
+	logGrpQue = bulkconf.EsBlukConfig.DefaultLogGroupQueueSize
+	if logQue < 1000 {
+		logQue = 1000
+	}
+	if logGrpQue < 4 {
+		logGrpQue = 4
+	}
+	return
+}
+
+// 读取配置文件信息
+func getConfig() *BlukConfig {
+	var config BlukConfig
+	data, err := os.ReadFile("/usr/local/loongcollector/conf/continuous_pipeline_config/local/processor_rename.yaml")
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	return &config
 }

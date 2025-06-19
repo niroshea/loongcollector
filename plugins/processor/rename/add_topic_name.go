@@ -101,7 +101,7 @@ func tTags2() {
 
 const (
 	_LogTruncateLen int    = 256 * 1024 // 256KB
-	_SuffixTruncate string = "...MaxByte_256KB_CutOff"
+	_SuffixTruncate string = "...Max_256KB_CutOff"
 	//
 	_LevelKey string = "level"
 )
