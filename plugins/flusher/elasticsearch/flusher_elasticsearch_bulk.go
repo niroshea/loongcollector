@@ -49,10 +49,11 @@ func performanceLog() {
 		} else {
 			sendBulkDura = dura_60 / count_60
 		}
-		log.Printf("---- buf channel already write [ %d ] and current write rate: [ %d/s ], sendBulk func duration: [ %s ], Min goroutine is [ %d ].\n",
+		log.Printf("---- buf channel already write [ %d ] and current write rate: [ %d/s ], sendBulk func duration: [ %s ], channel read rate [ %d/s ], recommend goroutine number is [ %d ].\n",
 			new_allBufCount,
 			allBufCount_60/60,
 			time.Duration(sendBulkDura).String(),
+			count_60/60,
 			int64(allBufCount_60)*sendBulkDura/60/1e9,
 		)
 		old_totalDuration, old_callCount, old_allBufCount = new_totalDuration, new_callCount, new_allBufCount
