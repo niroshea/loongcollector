@@ -49,11 +49,13 @@ func performanceLog() {
 		} else {
 			sendBulkDura = dura_60 / count_60
 		}
-		log.Printf("---- buf channel already write [ %d ] and current write rate: [ %d/s ], sendBulk func duration: [ %s ], channel read rate [ %d/s ], recommend goroutine number is [ %d ].\n",
+		log.Printf("--- buf chan write [ %d ] - write rate: [ %d/s ] - bulk write dura [ %s ] - chan read rate [ %d/s ] - bufChan[ %d/%d ] - min thread [ %d ].\n",
 			new_allBufCount,
 			allBufCount_60/60,
 			time.Duration(sendBulkDura).String(),
 			count_60/60,
+			len(bufChan),
+			cap(bufChan),
 			int64(allBufCount_60)*sendBulkDura/60/1e9,
 		)
 		old_totalDuration, old_callCount, old_allBufCount = new_totalDuration, new_callCount, new_allBufCount
@@ -66,8 +68,17 @@ type BlukConfig struct {
 	EsBlukConfig GoroutineConf `yaml:"es_bulk_config"`
 }
 type GoroutineConf struct {
-	GoThreadNum int `yaml:"goroutine"`
-	BatchSizeMB int `yaml:"batch_size_mb"`
+	GoThreadNum     int `yaml:"goroutine"`
+	BatchSizeMB     int `yaml:"batch_size_mb"`
+	BulkBufChanSize int `yaml:"buffer_chan_size"`
+}
+
+func getBufChanSize() (ret int) {
+	ret = bulkconf.EsBlukConfig.BulkBufChanSize
+	if ret < 3 {
+		ret = 100
+	}
+	return
 }
 
 // 读取配置文件信息
@@ -102,7 +113,7 @@ func putBuffer(buf *bytes.Buffer) {
 	bufferPool.Put(buf)
 }
 
-var bufChan = make(chan *bytes.Buffer, 100)
+var bufChan = make(chan *bytes.Buffer, getBufChanSize())
 
 func (f *FlusherElasticSearch) handleBufChan() {
 	goThreadNum := bulkconf.EsBlukConfig.GoThreadNum
