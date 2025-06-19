@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alibaba/ilogtail/pkg/fmtstr"
@@ -16,6 +17,47 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"gopkg.in/yaml.v3"
 )
+
+var (
+	totalDuration int64  // sendBulk函数消耗时间，累计，单位纳秒 -- 计算处理耗时
+	callCount     int64  // 调用 sendBulk 次数 -- 计算处理耗时
+	allBufCount   uint64 // buf 写入channel 计数 -- 计算写入速率为 W（条/秒）
+)
+
+func init() {
+	go performanceLog()
+}
+
+func performanceLog() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	var old_totalDuration, old_callCount int64
+	var old_allBufCount uint64
+	for range ticker.C {
+		new_totalDuration, new_callCount, new_allBufCount :=
+			atomic.LoadInt64(&totalDuration), atomic.LoadInt64(&callCount), atomic.LoadUint64(&allBufCount)
+
+		dura_60 := new_totalDuration - old_totalDuration
+		count_60 := new_callCount - old_callCount
+		allBufCount_60 := new_allBufCount - old_allBufCount
+
+		// 每次请求耗时
+		var sendBulkDura int64
+		if count_60 < 1 {
+			sendBulkDura = 0
+		} else {
+			sendBulkDura = dura_60 / count_60
+		}
+		log.Printf("---- buf channel already write [ %d ] and current write rate: [ %d/s ], sendBulk func duration: [ %s ], Min goroutine is [ %d ].\n",
+			new_allBufCount,
+			allBufCount_60/60,
+			time.Duration(sendBulkDura).String(),
+			int64(allBufCount_60)*sendBulkDura/60/1e9,
+		)
+		old_totalDuration, old_callCount, old_allBufCount = new_totalDuration, new_callCount, new_allBufCount
+	}
+}
 
 var bulkconf = getConfig()
 
@@ -98,6 +140,11 @@ func getMaxBatchSize() int {
 // var gw = gzip.NewWriter(&compressed)
 
 func (f *FlusherElasticSearch) sendBulk(bulkBuf *bytes.Buffer) error {
+	start := time.Now()
+	defer func() {
+		atomic.AddInt64(&totalDuration, time.Since(start).Nanoseconds())
+		atomic.AddInt64(&callCount, 1)
+	}()
 	// if _, err := io.Copy(gw, bulkBuf); err != nil {
 	// 	return err
 	// }
@@ -171,6 +218,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 				// }
 				// bulkBuf.Reset()
 				bufChan <- bulkBuf
+				atomic.AddUint64(&allBufCount, 1) // 批量写入计数，用于统计需要多少线程
 				batchBytes = 0
 			}
 		}
@@ -180,6 +228,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			// 	logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Final bulk send failed: %s", err)
 			// }
 			bufChan <- bulkBuf
+			atomic.AddUint64(&allBufCount, 1) // 批量写入计数，用于统计需要多少线程
 		}
 	}
 	return nil
