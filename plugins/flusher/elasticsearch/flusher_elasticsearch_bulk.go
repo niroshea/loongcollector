@@ -26,14 +26,25 @@ var (
 	dropBatchCount uint64 // 队列满了，无法及时写入的批次
 	//
 	goPool *ants.Pool
+	//
+	goThreadNum      = getGoThreadNum()
+	maxGoroutineSize = max(2*goThreadNum, goThreadNum+100)
+	//
+	goTuneTime time.Time
 )
 
-func init() {
-	goThreadNum := bulkconf.EsBlukConfig.GoThreadNum
-	if goThreadNum < 2 {
-		goThreadNum = 20
+func getGoThreadNum() int {
+	ret := bulkconf.EsBlukConfig.GoThreadNum
+	if ret < 2 {
+		ret = 20
 	}
-	log.Println("--- INFO es bulk goroutine number:", goThreadNum)
+	log.Println("--- INFO es bulk goroutine number:", ret)
+	return ret
+}
+
+func init() {
+	log.Println("--- INFO es bulk goroutine MAX number:", maxGoroutineSize)
+	goTuneTime = time.Now()
 
 	var err error
 	goPool, err = ants.NewPool(goThreadNum)
@@ -147,15 +158,41 @@ func putBuffer(buf *bytes.Buffer) {
 
 var bufChan = make(chan *bytes.Buffer, getBufChanSize())
 
+func goPoolTune(size int) {
+	if time.Since(goTuneTime) < 10*time.Second {
+		return
+	}
+	goPool.Tune(size)
+	goTuneTime = time.Now()
+}
+
 func (f *FlusherElasticSearch) handleBufChan() {
 	for v := range bufChan {
 		tbuf := v
-		goPool.Submit(func() {
+		err := goPool.Submit(func() {
 			if err := f.sendBulk(tbuf); err != nil {
 				logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
 			}
 			putBuffer(tbuf)
 		})
+		//扩缩容
+		if err == ants.ErrPoolOverload {
+			// 协程池已满，扩容 5 个
+			newSize := goPool.Cap() + 5
+			if newSize > maxGoroutineSize {
+				log.Println("--- WARN Pool overload! Expanding FAILD!!! MAX:", maxGoroutineSize)
+				continue
+			}
+			log.Println("--- INFO Pool overload! Expanding to", newSize)
+			goPoolTune(newSize)
+			continue
+		}
+		//正常缩容到启动时的大小
+		newSize := goPool.Cap() - 1
+		if newSize <= goThreadNum {
+			continue
+		}
+		goPoolTune(newSize)
 	}
 }
 
