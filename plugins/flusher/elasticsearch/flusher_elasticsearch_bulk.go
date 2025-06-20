@@ -33,7 +33,7 @@ func init() {
 	if goThreadNum < 2 {
 		goThreadNum = 20
 	}
-	log.Println("es bulk goroutine number:", goThreadNum)
+	log.Println("--- INFO es bulk goroutine number:", goThreadNum)
 
 	var err error
 	goPool, err = ants.NewPool(goThreadNum)
@@ -68,7 +68,7 @@ func performanceLog() {
 		} else {
 			sendBulkDura = dura_60 / count_60
 		}
-		log.Printf("--- buf chan write [ %d ] - write rate: [ %.3f/s ] - bulk write dura [ %s ] "+
+		log.Printf("--- INFO buf chan write [ %d ] - write rate: [ %.3f/s ] - bulk write dura [ %s ] "+
 			"- drop batch current/total [ %d/%d  ] - chan read rate [ %.3f/s ] - bufChan[ %d/%d ] - min thread [ %.3f ].\n",
 			new_allBufCount,
 			float64(allBufCount_60)/60,
@@ -80,6 +80,9 @@ func performanceLog() {
 			cap(bufChan),
 			float64(allBufCount_60)*float64(sendBulkDura)/60/1e9,
 		)
+
+		log.Printf("--- INFO ants go pool Running/Free/Cap [ %d/%d/%d ].\n", goPool.Running(), goPool.Free(), goPool.Cap())
+
 		old_totalDuration, old_callCount, old_allBufCount, old_dropBatchCount =
 			new_totalDuration, new_callCount, new_allBufCount, new_dropBatchCount
 	}
@@ -167,7 +170,7 @@ func getMaxBatchSize() int {
 	if bsize < 3 {
 		bsize = 10
 	}
-	log.Println("es bulk size(MB):", bsize)
+	log.Println("--- INFO es bulk size(MB):", bsize)
 	return bsize * MB
 }
 
