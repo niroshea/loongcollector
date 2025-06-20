@@ -233,6 +233,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 					PutBuffer(tmpBuf)
 				}
 				tmpBuf = GetBuffer() // --- 获取新的 buffer，开始新一轮累积
+				byteTmpLen = 0
 			}
 		}
 	}
