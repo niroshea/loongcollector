@@ -42,6 +42,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/openkruise/kruise-api v1.4.0
 	github.com/oschwald/geoip2-golang v1.1.0
+	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/paulbellamy/ratecounter v0.2.1-0.20170719102518-a803f0e4f071
 	github.com/pingcap/check v0.0.0-20200212061837-5e12011dc712
 	github.com/pkg/errors v0.9.1

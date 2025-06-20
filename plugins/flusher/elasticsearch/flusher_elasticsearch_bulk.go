@@ -15,6 +15,7 @@ import (
 	"github.com/alibaba/ilogtail/pkg/logger"
 	"github.com/alibaba/ilogtail/pkg/protocol"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	ants "github.com/panjf2000/ants/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,9 +24,23 @@ var (
 	callCount      int64  // 调用 sendBulk 次数 -- 计算处理耗时
 	allBufCount    uint64 // buf 写入channel 计数 -- 计算写入速率为 W（条/秒）
 	dropBatchCount uint64 // 队列满了，无法及时写入的批次
+	//
+	goPool *ants.Pool
 )
 
 func init() {
+	goThreadNum := bulkconf.EsBlukConfig.GoThreadNum
+	if goThreadNum < 2 {
+		goThreadNum = 20
+	}
+	log.Println("es bulk goroutine number:", goThreadNum)
+
+	var err error
+	goPool, err = ants.NewPool(goThreadNum)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	go performanceLog()
 }
 
@@ -130,20 +145,14 @@ func putBuffer(buf *bytes.Buffer) {
 var bufChan = make(chan *bytes.Buffer, getBufChanSize())
 
 func (f *FlusherElasticSearch) handleBufChan() {
-	goThreadNum := bulkconf.EsBlukConfig.GoThreadNum
-	if goThreadNum < 2 {
-		goThreadNum = 10
-	}
-	log.Println("es bulk goroutine number:", goThreadNum)
-	for range goThreadNum {
-		go func() {
-			for tbuf := range bufChan {
-				if err := f.sendBulk(tbuf); err != nil {
-					logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
-				}
-				putBuffer(tbuf)
+	for v := range bufChan {
+		tbuf := v
+		goPool.Submit(func() {
+			if err := f.sendBulk(tbuf); err != nil {
+				logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
 			}
-		}()
+			putBuffer(tbuf)
+		})
 	}
 }
 

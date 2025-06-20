@@ -131,7 +131,7 @@ func (f *FlusherElasticSearch) Init(context pipeline.Context) error {
 		return err
 	}
 	// 多线程处理
-	f.handleBufChan()
+	go f.handleBufChan()
 	return nil
 }
 
