@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	totalDuration int64  // sendBulk函数消耗时间，累计，单位纳秒 -- 计算处理耗时
-	callCount     int64  // 调用 sendBulk 次数 -- 计算处理耗时
-	allBufCount   uint64 // buf 写入channel 计数 -- 计算写入速率为 W（条/秒）
+	totalDuration  int64  // sendBulk函数消耗时间，累计，单位纳秒 -- 计算处理耗时
+	callCount      int64  // 调用 sendBulk 次数 -- 计算处理耗时
+	allBufCount    uint64 // buf 写入channel 计数 -- 计算写入速率为 W（条/秒）
+	dropBatchCount uint64 // 队列满了，无法及时写入的批次
 )
 
 func init() {
@@ -33,14 +34,17 @@ func performanceLog() {
 	defer ticker.Stop()
 
 	var old_totalDuration, old_callCount int64
-	var old_allBufCount uint64
+	var old_allBufCount, old_dropBatchCount uint64
 	for range ticker.C {
-		new_totalDuration, new_callCount, new_allBufCount :=
-			atomic.LoadInt64(&totalDuration), atomic.LoadInt64(&callCount), atomic.LoadUint64(&allBufCount)
+		new_totalDuration, new_callCount, new_allBufCount, new_dropBatchCount :=
+			atomic.LoadInt64(&totalDuration), atomic.LoadInt64(&callCount),
+			atomic.LoadUint64(&allBufCount), atomic.LoadUint64(&dropBatchCount)
 
 		dura_60 := new_totalDuration - old_totalDuration
 		count_60 := new_callCount - old_callCount
+
 		allBufCount_60 := new_allBufCount - old_allBufCount
+		dropBatch_60 := new_dropBatchCount - old_dropBatchCount
 
 		// 每次请求耗时
 		var sendBulkDura int64
@@ -49,16 +53,20 @@ func performanceLog() {
 		} else {
 			sendBulkDura = dura_60 / count_60
 		}
-		log.Printf("--- buf chan write [ %d ] - write rate: [ %d/s ] - bulk write dura [ %s ] - chan read rate [ %d/s ] - bufChan[ %d/%d ] - min thread [ %d ].\n",
+		log.Printf("--- buf chan write [ %d ] - write rate: [ %.3f/s ] - bulk write dura [ %s ] "+
+			"- drop batch current/total [ %d/%d  ] - chan read rate [ %.3f/s ] - bufChan[ %d/%d ] - min thread [ %.3f ].\n",
 			new_allBufCount,
-			allBufCount_60/60,
+			float64(allBufCount_60)/60,
 			time.Duration(sendBulkDura).String(),
-			count_60/60,
+			dropBatch_60,
+			new_dropBatchCount,
+			float64(count_60)/60,
 			len(bufChan),
 			cap(bufChan),
-			int64(allBufCount_60)*sendBulkDura/60/1e9,
+			float64(allBufCount_60)*float64(sendBulkDura)/60/1e9,
 		)
-		old_totalDuration, old_callCount, old_allBufCount = new_totalDuration, new_callCount, new_allBufCount
+		old_totalDuration, old_callCount, old_allBufCount, old_dropBatchCount =
+			new_totalDuration, new_callCount, new_allBufCount, new_dropBatchCount
 	}
 }
 
@@ -99,7 +107,8 @@ func getConfig() *BlukConfig {
 
 var bufferPool = sync.Pool{
 	New: func() any {
-		return new(bytes.Buffer)
+		// 预先分配一定容量，避免每次扩容
+		return bytes.NewBuffer(make([]byte, 0, 2*MB))
 	},
 }
 
@@ -110,6 +119,11 @@ func getBuffer() *bytes.Buffer {
 }
 
 func putBuffer(buf *bytes.Buffer) {
+	// 超过最大大小的 buffer 不放回池中，防止长期占用过多内存
+	if buf.Cap() > maxBatchBytes+MB {
+		log.Println("--- WARN  buffer 销毁")
+		return
+	}
 	bufferPool.Put(buf)
 }
 
@@ -123,11 +137,11 @@ func (f *FlusherElasticSearch) handleBufChan() {
 	log.Println("es bulk goroutine number:", goThreadNum)
 	for range goThreadNum {
 		go func() {
-			for v := range bufChan {
-				if err := f.sendBulk(v); err != nil {
+			for tbuf := range bufChan {
+				if err := f.sendBulk(tbuf); err != nil {
 					logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
 				}
-				putBuffer(v)
+				putBuffer(tbuf)
 			}
 		}()
 	}
@@ -205,7 +219,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 		}
 		bulkBuf := getBuffer()
 		var batchBytes int
-		for index, log := range serializedLogs.([][]byte) {
+		for index, logData := range serializedLogs.([][]byte) {
 			esIndex := &f.Index
 			if f.isDynamicIndex {
 				valueMap := values[index]
@@ -216,31 +230,31 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 				}
 			}
 			meta := []byte(`{"` + bulkAction + `": {"_index": "` + *esIndex + `"}}` + "\n")
-			log = append(log, "\n"...)
-			logLen := len(meta) + len(log)
+			logData = append(logData, "\n"...)
+			batchBytes += len(meta) + len(logData)
 			//
-			bulkBuf.Grow(logLen)
 			bulkBuf.Write(meta)
-			bulkBuf.Write(log)
+			bulkBuf.Write(logData)
 			//
-			batchBytes += logLen
 			if batchBytes >= maxBatchBytes {
-				// if err := f.sendBulk(&bulkBuf); err != nil {
-				// 	logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Bulk send failed: %s", err)
-				// }
-				// bulkBuf.Reset()
-				bufChan <- bulkBuf
-				atomic.AddUint64(&allBufCount, 1) // 批量写入计数，用于统计需要多少线程
+				select {
+				case bufChan <- bulkBuf:
+					atomic.AddUint64(&allBufCount, 1) // 批量写入计数，用于统计需要多少线程
+				default:
+					atomic.AddUint64(&dropBatchCount, 1)
+				}
+				bulkBuf = getBuffer() // 写入新变量
 				batchBytes = 0
 			}
 		}
 		// Flush the remaining data
 		if bulkBuf.Len() > 0 {
-			// if err := f.sendBulk(&bulkBuf); err != nil {
-			// 	logger.Errorf(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "Final bulk send failed: %s", err)
-			// }
-			bufChan <- bulkBuf
-			atomic.AddUint64(&allBufCount, 1) // 批量写入计数，用于统计需要多少线程
+			select {
+			case bufChan <- bulkBuf:
+				atomic.AddUint64(&allBufCount, 1) // 批量写入计数，用于统计需要多少线程
+			default:
+				atomic.AddUint64(&dropBatchCount, 1)
+			}
 		}
 	}
 	return nil
