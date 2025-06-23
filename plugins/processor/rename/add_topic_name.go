@@ -1,6 +1,7 @@
 package rename
 
 import (
+	"log"
 	"os"
 	"regexp"
 	"strconv"
@@ -107,15 +108,16 @@ const (
 )
 
 // truncateUTF8Safe 截取 UTF-8 字符串的前 n 个字节，确保不截断字符。
-func truncateUTF8Safe(s string) string {
-	if len(s) <= _LogTruncateLen {
-		return s
+func truncateUTF8Safe(s string) (string, int) {
+	retLen := len(s)
+	if retLen <= _LogTruncateLen {
+		return s, retLen
 	}
 	end := _LogTruncateLen
 	for end > 0 && !utf8.RuneStart(s[end]) {
 		end--
 	}
-	return s[:end] + _SuffixTruncate
+	return s[:end] + _SuffixTruncate, retLen
 }
 
 func getLogLevel(logContent string) string {
@@ -163,4 +165,22 @@ var levelMap = map[string]string{
 	"DEBUG": "DEBUG",
 	"DBG":   "DEBUG",
 	"debug": "DEBUG",
+}
+
+var aggMap = NewAppSizeAggregator()
+
+func performanceLog() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	var old_snapshot = make(map[string]uint64)
+
+	for range ticker.C {
+		new_snapshot := aggMap.Snapshot()
+		for appKey, tBytesN := range new_snapshot {
+			log.Printf("--- INFO --- [ %s ] total bytes [ %d ],rate [ %.3f MB/s ].\n",
+				appKey, tBytesN, float64(tBytesN-old_snapshot[appKey])/60/1024/1024)
+		}
+		old_snapshot = new_snapshot
+	}
 }
