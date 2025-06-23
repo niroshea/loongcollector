@@ -15,6 +15,8 @@
 package elasticsearch
 
 import (
+	"fmt"
+	"math/rand"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
@@ -101,5 +103,47 @@ func TestGetIndexKeys(t *testing.T) {
 				So(keys[1], ShouldEqual, "tag.host.ip")
 			})
 		})
+	})
+}
+
+func randomApp(apps []string) string {
+	return apps[rand.Intn(len(apps))]
+}
+
+func generateAppList(n int) []string {
+	apps := make([]string, n)
+	for i := 0; i < n; i++ {
+		apps[i] = fmt.Sprintf("app-%04d", i)
+	}
+	return apps
+}
+
+func BenchmarkAppSizeAggregator_Add(b *testing.B) {
+	agg := NewAppSizeAggregator()
+	apps := generateAppList(200)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			app := randomApp(apps)
+			agg.Add(app, 300)
+		}
+	})
+}
+
+func BenchmarkAppSizeAggregator_Get(b *testing.B) {
+	agg := NewAppSizeAggregator()
+	apps := generateAppList(200)
+	// 先预写入，确保读取时有数据
+	for i := 0; i < 100000; i++ {
+		agg.Add(randomApp(apps), 300)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			app := randomApp(apps)
+			_ = agg.Get(app)
+		}
 	})
 }

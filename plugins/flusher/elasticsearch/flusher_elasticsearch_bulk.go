@@ -28,6 +28,7 @@ var (
 	goPool *ants.Pool
 	//
 	goThreadNum = getGoThreadNum()
+	aggMap      = NewAppSizeAggregator()
 )
 
 func getGoThreadNum() int {
@@ -249,6 +250,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			meta := []byte(`{"` + bulkAction + `": {"_index": "` + *esIndex + `"}}` + "\n")
 			logData = append(logData, "\n"...)
 			batchBytes += len(meta) + len(logData)
+			//aggMap.Add()
 			//
 			bulkBuf.Write(meta)
 			bulkBuf.Write(logData)
