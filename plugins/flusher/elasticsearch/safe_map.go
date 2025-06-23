@@ -42,9 +42,9 @@ func (a *AppSizeAggregator) Add(app string, size int) {
 		// 如果没有，就写入一个新的
 		shard.mu.Lock()
 		if counter, ok = shard.stats[app]; !ok {
-			var zero uint64
-			shard.stats[app] = &zero
-			counter = &zero
+			zero := new(uint64)
+			shard.stats[app] = zero
+			counter = zero
 			atomic.AddUint64(&a.allLen, 1)
 		}
 		shard.mu.Unlock()
