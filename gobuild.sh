@@ -28,12 +28,12 @@ cd output/ || exit
 
 pwd
 
-imageTag=hpc-sgp-prod-jcr-aliyun.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t$1
+#imageTag=hpc-sgp-prod-jcr-aliyun.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t$1
 imageTag2=hpc-sgp-uat-jcr-aliyun.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t$1
 
-docker build -t $imageTag  -f tihuan.dockerfile .
+docker build -t $imageTag2  -f tihuan.dockerfile .
 
-docker tag $imageTag  $imageTag2
+#docker tag $imageTag  $imageTag2
 
-docker push $imageTag
+#docker push $imageTag
 docker push $imageTag2

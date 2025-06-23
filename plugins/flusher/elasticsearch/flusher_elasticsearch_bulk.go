@@ -274,7 +274,9 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			logData = append(logData, "\n"...)
 			logLen := len(meta) + len(logData)
 			//+spaceStr+valueMap[tagNodeIPKey]
-			aggMap.Add(valueMap[contentContainerKey]+spaceStr+valueMap[contentNamespaceKey], logLen)
+			goPool.Submit(func() {
+				aggMap.Add(valueMap[contentContainerKey]+spaceStr+valueMap[contentNamespaceKey], logLen)
+			})
 			//
 			bulkBuf.Write(meta)
 			bulkBuf.Write(logData)
