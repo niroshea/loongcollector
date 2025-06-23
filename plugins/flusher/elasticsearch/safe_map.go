@@ -7,7 +7,7 @@ import (
 )
 
 // 分片数量（应为2的幂）
-const shardCount = 1 << 10
+const shardCount = 1 << 5
 
 type AppStatShard struct {
 	mu    sync.RWMutex

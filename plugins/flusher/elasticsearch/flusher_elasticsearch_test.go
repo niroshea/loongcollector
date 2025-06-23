@@ -120,7 +120,7 @@ func generateAppList(n int) []string {
 
 func BenchmarkAppSizeAggregator_Add(b *testing.B) {
 	agg := NewAppSizeAggregator()
-	apps := generateAppList(200)
+	apps := generateAppList(20)
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

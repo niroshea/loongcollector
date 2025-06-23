@@ -19,6 +19,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	targetContentPrefix = "content."
+	targetTagPrefix     = "tag."
+	//tagHostIP           = "host.ip"
+	//
+	contentContainerKey = targetContentPrefix + "container"
+	contentNamespaceKey = targetContentPrefix + "namespace"
+	//tagNodeIPKey        = targetTagPrefix + tagHostIP
+	//
+	spaceStr string = " "
+)
+
 var (
 	totalDuration  int64  // sendBulk函数消耗时间，累计，单位纳秒 -- 计算处理耗时
 	callCount      int64  // 调用 sendBulk 次数 -- 计算处理耗时
@@ -56,6 +68,9 @@ func performanceLog() {
 
 	var old_totalDuration, old_callCount int64
 	var old_allBufCount, old_dropBatchCount uint64
+
+	var old_snapshot = make(map[string]uint64)
+
 	for range ticker.C {
 		new_totalDuration, new_callCount, new_allBufCount, new_dropBatchCount :=
 			atomic.LoadInt64(&totalDuration), atomic.LoadInt64(&callCount),
@@ -89,8 +104,15 @@ func performanceLog() {
 
 		log.Printf("--- INFO ants go pool Running/Free/Cap [ %d/%d/%d ].\n", goPool.Running(), goPool.Free(), goPool.Cap())
 
+		new_snapshot := aggMap.Snapshot()
+		for appKey, tBytesN := range new_snapshot {
+			log.Printf("--- INFO --- [ %s ] total bytes [ %d ],rate [ %.3f MB/s ].\n",
+				appKey, tBytesN, float64(tBytesN-old_snapshot[appKey])/60/1024/1024)
+		}
+
 		old_totalDuration, old_callCount, old_allBufCount, old_dropBatchCount =
 			new_totalDuration, new_callCount, new_allBufCount, new_dropBatchCount
+		old_snapshot = new_snapshot
 	}
 }
 
@@ -227,6 +249,7 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 	if f.Action != "" {
 		bulkAction = f.Action
 	}
+	f.indexKeys = append(f.indexKeys, contentContainerKey, contentNamespaceKey) //, tagNodeIPKey
 	nowTime := time.Now().Local()
 	for _, logGroup := range logGroupList {
 		logger.Debug(f.context.GetRuntimeContext(), "[LogGroup] topic", logGroup.Topic, "logstore", logGroup.Category, "logcount", len(logGroup.Logs), "tags", logGroup.LogTags)
@@ -239,8 +262,8 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 		var batchBytes int
 		for index, logData := range serializedLogs.([][]byte) {
 			esIndex := &f.Index
+			valueMap := values[index]
 			if f.isDynamicIndex {
-				valueMap := values[index]
 				esIndex, err = fmtstr.FormatIndex(valueMap, f.Index, uint32(nowTime.Unix()))
 				if err != nil {
 					logger.Error(f.context.GetRuntimeContext(), "FLUSHER_FLUSH_ALARM", "ERROR flush elasticsearch format index fail, error", err)
@@ -249,12 +272,14 @@ func (f *FlusherElasticSearch) Flush(projectName string, logstoreName string, co
 			}
 			meta := []byte(`{"` + bulkAction + `": {"_index": "` + *esIndex + `"}}` + "\n")
 			logData = append(logData, "\n"...)
-			batchBytes += len(meta) + len(logData)
-			//aggMap.Add()
+			logLen := len(meta) + len(logData)
+			//+spaceStr+valueMap[tagNodeIPKey]
+			aggMap.Add(valueMap[contentContainerKey]+spaceStr+valueMap[contentNamespaceKey], logLen)
 			//
 			bulkBuf.Write(meta)
 			bulkBuf.Write(logData)
 			//
+			batchBytes += logLen
 			if batchBytes >= maxBatchBytes {
 				select {
 				case bufChan <- bulkBuf:
