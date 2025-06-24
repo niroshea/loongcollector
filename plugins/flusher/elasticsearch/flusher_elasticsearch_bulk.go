@@ -115,7 +115,7 @@ func getBufChanSize() (ret int) {
 // 读取配置文件信息
 func getConfig() *BlukConfig {
 	var config BlukConfig
-	data, err := os.ReadFile("/usr/local/loongcollector/conf/continuous_pipeline_config/local/processor_rename.yaml")
+	data, err := os.ReadFile("/usr/local/loongcollector/conf/continuous_pipeline_config/local/hik_processor_rename.yaml")
 	if err != nil {
 		log.Println(err)
 		return nil

@@ -175,3 +175,43 @@ data:
           retention: 14
           apps:
             - app7
+
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: loongcollector-svc
+  namespace: loongcollector
+  labels:
+    k8s-app: loongcollector-ds
+spec:
+  ports:
+    - name: http-metrics
+      protocol: TCP
+      port: 8080
+      targetPort: http-metrics
+  selector:
+    k8s-app: loongcollector-ds
+  type: ClusterIP
+  sessionAffinity: None
+---
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    k8s-app: loongcollector-ds
+  name: loongcollector
+  namespace: loongcollector
+spec:
+  endpoints:
+    - interval: 15s
+      path: /metrics
+      port: http-metrics
+  namespaceSelector:
+    matchNames:
+      - loongcollector
+  selector:
+    matchLabels:
+      k8s-app: loongcollector-ds

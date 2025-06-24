@@ -1,6 +1,8 @@
 package rename
 
 import (
+	"log"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -8,11 +10,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
 )
 
 var projEsConfig = topicConfig()
-var allErrInfo strings.Builder
 
 type ProjConfig struct {
 	Project map[string]map[string]ProjLogGroup `yaml:"project"`
@@ -56,7 +59,7 @@ func init() {
 		tmpAppMap[DefaultMapKey] = IndexPatterns(projectName, 7)
 		projectAppMap[projectName] = tmpAppMap
 	}
-	tTags2()
+	go performanceLog()
 }
 
 func genTopicName(namespace, container interface{}) string {
@@ -77,26 +80,17 @@ func genTopicName(namespace, container interface{}) string {
 // 读取配置文件信息
 func topicConfig() *ProjConfig {
 	var config ProjConfig
-	data, err := os.ReadFile("/usr/local/loongcollector/conf/continuous_pipeline_config/local/" + pluginType + ".yaml")
+	data, err := os.ReadFile("/usr/local/loongcollector/conf/continuous_pipeline_config/local/hik_processor_rename.yaml")
 	if err != nil {
-		allErrInfo.WriteString(err.Error() + "\n")
+		log.Fatalln(err)
 		return nil
 	}
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		allErrInfo.WriteString(err.Error() + "\n")
+		log.Fatalln(err)
 		return nil
 	}
 	return &config
-}
-
-// func tTags() {
-// 	timeNowStr := time.Now().Format(TimeFormat)
-// 	os.WriteFile("/usr/local/loongcollector/shebinbin_"+timeNowStr+".log", []byte("ok\n"), 0755)
-// }
-
-func tTags2() {
-	os.WriteFile("/usr/local/loongcollector/shebinbin_1_"+time.Now().Format(TimeFormat)+".log", []byte(allErrInfo.String()), 0755)
 }
 
 const (
@@ -107,15 +101,16 @@ const (
 )
 
 // truncateUTF8Safe 截取 UTF-8 字符串的前 n 个字节，确保不截断字符。
-func truncateUTF8Safe(s string) string {
-	if len(s) <= _LogTruncateLen {
-		return s
+func truncateUTF8Safe(s string) (string, int) {
+	sLen := len(s)
+	if sLen <= _LogTruncateLen {
+		return s, sLen
 	}
 	end := _LogTruncateLen
 	for end > 0 && !utf8.RuneStart(s[end]) {
 		end--
 	}
-	return s[:end] + _SuffixTruncate
+	return s[:end] + _SuffixTruncate, sLen
 }
 
 func getLogLevel(logContent string) string {
@@ -163,4 +158,55 @@ var levelMap = map[string]string{
 	"DEBUG": "DEBUG",
 	"DBG":   "DEBUG",
 	"debug": "DEBUG",
+}
+
+var aggMap = NewAppSizeAggregator()
+
+func performanceLog() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	//old_snapshot := make(map[string]uint64)
+	for range ticker.C {
+		new_snapshot := aggMap.Snapshot()
+		for appKey, tBytesN := range new_snapshot {
+			// log.Printf("--- INFO --- [ %s ] total bytes [ %d ],rate [ %.3f MB/s ].\n",
+			// 	appKey, tBytesN, float64(tBytesN-old_snapshot[appKey])/60/1024/1024)
+			if app, ns, ok := getAppNs(appKey); ok {
+				bytesWrittenVec.WithLabelValues(app, ns).Set(float64(tBytesN))
+			}
+		}
+		//old_snapshot = new_snapshot
+	}
+}
+func getAppNs(key string) (app, ns string, ok bool) {
+	xlist := strings.Fields(key)
+	if len(xlist) != 2 {
+		return
+	}
+	return xlist[0], xlist[1], true
+}
+
+var bytesWrittenVec = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "log_convergence_app_bytes_written_total",
+		Help: "Total number of bytes written by app",
+	},
+	[]string{"log_container", "log_namespace"},
+)
+
+func init() {
+	// 创建一个新的注册器，不注册默认的 Go 和进程指标
+	reg := prometheus.NewRegistry()
+
+	reg.MustRegister(bytesWrittenVec)
+
+	// 暴露自定义注册器的 /metrics 接口
+	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	log.Println("Listening on :8080/metrics without default metrics")
+	go func() {
+		err := http.ListenAndServe(":8080", nil)
+		if err != nil {
+			log.Println(err)
+		}
+	}()
 }
