@@ -60,6 +60,7 @@ func init() {
 		projectAppMap[projectName] = tmpAppMap
 	}
 	go performanceLog()
+	go clearAggMap()
 }
 
 func genTopicName(namespace, container interface{}) string {
@@ -178,6 +179,23 @@ func performanceLog() {
 		//old_snapshot = new_snapshot
 	}
 }
+
+func clearAggMap() { // 间隔清理数据，如果间隔内 key 没有产生数据的话
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	old_snapshot := make(map[string]uint64)
+	for range ticker.C {
+		new_snapshot := aggMap.Snapshot()
+		for appKey, tSize := range new_snapshot {
+			if tSize-old_snapshot[appKey] < 1 {
+				aggMap.Delete(appKey)
+			}
+		}
+		old_snapshot = new_snapshot
+	}
+}
+
 func getAppNs(key string) (app, ns string, ok bool) {
 	xlist := strings.Fields(key)
 	if len(xlist) != 2 {

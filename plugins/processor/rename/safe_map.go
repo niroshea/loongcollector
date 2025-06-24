@@ -16,7 +16,6 @@ type AppStatShard struct {
 
 type AppSizeAggregator struct {
 	shards [shardCount]AppStatShard
-	allLen uint64
 }
 
 func NewAppSizeAggregator() *AppSizeAggregator {
@@ -27,24 +26,23 @@ func NewAppSizeAggregator() *AppSizeAggregator {
 	return a
 }
 
-func (a *AppSizeAggregator) getShard(app string) *AppStatShard {
+func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
 	h := fnv.New32a()
-	h.Write([]byte(app))
+	h.Write([]byte(key))
 	return &a.shards[h.Sum32()%shardCount]
 }
 
-func (a *AppSizeAggregator) Add(app string, size int) {
-	shard := a.getShard(app)
+func (a *AppSizeAggregator) Add(key string, size int) {
+	shard := a.getShard(key)
 	shard.mu.RLock()
-	counter, ok := shard.stats[app]
+	counter, ok := shard.stats[key]
 	shard.mu.RUnlock()
 	if !ok {
 		// 如果没有，就写入一个新的
 		shard.mu.Lock()
-		if counter, ok = shard.stats[app]; !ok {
-			shard.stats[app] = new(uint64)
-			counter = shard.stats[app]
-			atomic.AddUint64(&a.allLen, 1)
+		if counter, ok = shard.stats[key]; !ok {
+			shard.stats[key] = new(uint64)
+			counter = shard.stats[key]
 		}
 		shard.mu.Unlock()
 	}
@@ -52,22 +50,26 @@ func (a *AppSizeAggregator) Add(app string, size int) {
 	atomic.AddUint64(counter, uint64(size))
 }
 
-func (a *AppSizeAggregator) Get(app string) uint64 {
-	shard := a.getShard(app)
+func (a *AppSizeAggregator) Delete(key string) {
+	shard := a.getShard(key)
+	//
+	shard.mu.Lock()
+	delete(shard.stats, key)
+	shard.mu.Unlock()
+}
+
+func (a *AppSizeAggregator) Get(key string) uint64 {
+	shard := a.getShard(key)
 	shard.mu.RLock()
 	defer shard.mu.RUnlock()
-	if val, ok := shard.stats[app]; ok {
+	if val, ok := shard.stats[key]; ok {
 		return atomic.LoadUint64(val)
 	}
 	return 0
 }
 
-func (a *AppSizeAggregator) Len() uint64 {
-	return atomic.LoadUint64(&a.allLen)
-}
-
 func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
-	result := make(map[string]uint64, a.Len())
+	result := make(map[string]uint64)
 	for i := range shardCount {
 		shard := &a.shards[i]
 		shard.mu.RLock()
