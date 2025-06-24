@@ -158,7 +158,8 @@ data:
           PlainText:
             Username: elastic
             Password: TE3h1xA7xsjypIrM+DJF
-  processor_rename.yaml: |
+  hik_processor_rename.yaml: |
+    enable: false
     project:
       convergence:
         log_group1:
