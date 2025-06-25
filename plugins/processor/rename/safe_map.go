@@ -1,13 +1,12 @@
 package rename
 
 import (
-	"hash/fnv"
+	"runtime"
 	"sync"
 	"sync/atomic"
-)
 
-// 分片数量（应为2的幂）
-const shardCount = 1 << 5
+	xxhash "github.com/cespare/xxhash/v2"
+)
 
 type AppStatShard struct {
 	mu    sync.RWMutex
@@ -15,21 +14,31 @@ type AppStatShard struct {
 }
 
 type AppSizeAggregator struct {
-	shards [shardCount]AppStatShard
+	shards    []AppStatShard
+	shardsLen uint32
 }
 
-func NewAppSizeAggregator() *AppSizeAggregator {
-	a := &AppSizeAggregator{}
-	for i := range shardCount {
+func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
+	a := &AppSizeAggregator{
+		shardsLen: defaultShardLen,
+	}
+	if len(initShardCount) > 0 {
+		if isPowerOf2(initShardCount[0]) {
+			a.shardsLen = initShardCount[0]
+		} else {
+			panic("input shard count need > 2 and need 2^N")
+		}
+	}
+	a.shards = make([]AppStatShard, a.shardsLen)
+	for i := range a.shards {
 		a.shards[i].stats = make(map[string]*uint64)
 	}
 	return a
 }
 
 func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
-	h := fnv.New32a()
-	h.Write([]byte(key))
-	return &a.shards[h.Sum32()%shardCount]
+	h := uint32(xxhash.Sum64String(key))
+	return &a.shards[h&(a.shardsLen-1)]
 }
 
 func (a *AppSizeAggregator) Add(key string, size int) {
@@ -70,7 +79,7 @@ func (a *AppSizeAggregator) Get(key string) uint64 {
 
 func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
 	result := make(map[string]uint64)
-	for i := range shardCount {
+	for i := range a.shards {
 		shard := &a.shards[i]
 		shard.mu.RLock()
 		for k, v := range shard.stats {
@@ -80,3 +89,38 @@ func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
 	}
 	return result
 }
+
+func (a *AppSizeAggregator) HashDistribution() []int {
+	perf := make([]int, a.shardsLen)
+	for i := range a.shards {
+		shard := &a.shards[i]
+		shard.mu.RLock()
+		perf[i] = len(shard.stats)
+		shard.mu.RUnlock()
+	}
+	return perf
+}
+
+// 分片数量（应为2的幂）
+func nextPower2(n uint32) uint32 {
+	if n <= 1 {
+		return 1
+	}
+	n--
+
+	n |= n >> 1
+	n |= n >> 2
+	n |= n >> 4
+	n |= n >> 8
+	n |= n >> 16
+
+	n++
+	return n
+}
+
+func isPowerOf2(n uint32) bool {
+	return n > 2 && ((n & (n - 1)) == 0)
+}
+
+// 分片数量（应为2的幂）,最小为4
+var defaultShardLen = max(nextPower2(uint32(runtime.NumCPU()))*4, 4)

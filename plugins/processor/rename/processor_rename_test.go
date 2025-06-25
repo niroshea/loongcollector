@@ -16,6 +16,7 @@ package rename
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/alibaba/ilogtail/pkg/helper"
 	"github.com/alibaba/ilogtail/pkg/logger"
@@ -164,4 +165,52 @@ func TestX001(t *testing.T) {
 	fmt.Println(genTopicName("ym-sgp-prod", "hpcarc"))
 
 	fmt.Println(getLogLevel("2025-06-13 15:38:30.584          service/12_local_hiklink.go:130"))
+}
+
+func randomApp(apps []string) string {
+	return apps[rand.Intn(len(apps))]
+}
+
+func generateAppList(n int) []string {
+	apps := make([]string, n)
+	for i := 0; i < n; i++ {
+		apps[i] = fmt.Sprintf("app-%04d", i)
+	}
+	return apps
+}
+
+func BenchmarkAppSizeAggregator_Add(b *testing.B) {
+	agg := NewAppSizeAggregator()
+	apps := generateAppList(20)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			app := randomApp(apps)
+			agg.Add(app, 300)
+		}
+	})
+}
+
+func BenchmarkAppSizeAggregator_Get(b *testing.B) {
+	agg := NewAppSizeAggregator()
+	apps := generateAppList(200)
+	// 先预写入，确保读取时有数据
+	for i := 0; i < 100000; i++ {
+		agg.Add(randomApp(apps), 300)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			app := randomApp(apps)
+			_ = agg.Get(app)
+		}
+	})
+}
+
+func TestX002(t *testing.T) {
+	for i := 1; i < 100; i++ {
+		fmt.Printf("%d  next power2 is %d\n", i, nextPower2(uint32(i)))
+	}
 }
