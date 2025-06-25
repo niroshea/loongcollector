@@ -2,6 +2,7 @@ package rename
 
 import (
 	"hash/fnv"
+	"log"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -97,13 +98,17 @@ func nextPowerOfTwo(n uint32) uint32 {
 	return n
 }
 
+func isPowerOfTwo(n uint32) bool {
+	return n > 0 && (n&(n-1)) == 0
+}
+
 // 分片数量（应为2的幂）
-const DefaultShardCount uint32 = 1 << 5
+const DefaultShardCount uint32 = 1 << 4
 
 func getShardCount() uint32 {
-	count := nextPowerOfTwo(uint32(runtime.NumCPU() * 4))
-	if count <= DefaultShardCount {
-		return DefaultShardCount
+	count := max(nextPowerOfTwo(uint32(runtime.NumCPU()*4)), DefaultShardCount)
+	if !isPowerOfTwo(count) {
+		log.Fatal(count, "is not power of 2 (2^N)")
 	}
 	return count
 }
