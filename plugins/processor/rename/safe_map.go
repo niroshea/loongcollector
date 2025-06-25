@@ -2,12 +2,10 @@ package rename
 
 import (
 	"hash/fnv"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
-
-// 分片数量（应为2的幂）
-const shardCount = 1 << 5
 
 type AppStatShard struct {
 	mu    sync.RWMutex
@@ -15,11 +13,13 @@ type AppStatShard struct {
 }
 
 type AppSizeAggregator struct {
-	shards [shardCount]AppStatShard
+	shards []AppStatShard
 }
 
 func NewAppSizeAggregator() *AppSizeAggregator {
-	a := &AppSizeAggregator{}
+	a := &AppSizeAggregator{
+		shards: make([]AppStatShard, shardCount),
+	}
 	for i := range shardCount {
 		a.shards[i].stats = make(map[string]*uint64)
 	}
@@ -29,7 +29,7 @@ func NewAppSizeAggregator() *AppSizeAggregator {
 func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
 	h := fnv.New32a()
 	h.Write([]byte(key))
-	return &a.shards[h.Sum32()%shardCount]
+	return &a.shards[h.Sum32()&(shardCount-1)]
 }
 
 func (a *AppSizeAggregator) Add(key string, size int) {
@@ -80,3 +80,32 @@ func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
 	}
 	return result
 }
+
+func nextPowerOfTwo(n uint32) uint32 {
+	if n <= 1 {
+		return 1
+	}
+	n--
+
+	n |= n >> 1
+	n |= n >> 2
+	n |= n >> 4
+	n |= n >> 8
+	n |= n >> 16
+
+	n++
+	return n
+}
+
+// 分片数量（应为2的幂）
+const DefaultShardCount uint32 = 1 << 5
+
+func getShardCount() uint32 {
+	count := nextPowerOfTwo(uint32(runtime.NumCPU() * 4))
+	if count <= DefaultShardCount {
+		return DefaultShardCount
+	}
+	return count
+}
+
+var shardCount = getShardCount()
