@@ -41,7 +41,7 @@ func getGoThreadNum() int {
 
 func init() {
 	var err error
-	goPool, err = ants.NewPool(goThreadNum)
+	goPool, err = ants.NewPool(goThreadNum, ants.WithMaxBlockingTasks(goThreadNum*2))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func performanceLog() {
 			float64(allBufCount_60)*float64(sendBulkDura)/60/1e9,
 		)
 
-		log.Printf("--- INFO ants go pool Running/Free/Cap [ %d/%d/%d ].\n", goPool.Running(), goPool.Free(), goPool.Cap())
+		log.Printf("--- INFO ants go pool Run[%d]/Wait[%d]/Free[%d]/Cap[%d].\n", goPool.Running(), goPool.Waiting(), goPool.Free(), goPool.Cap())
 
 		old_totalDuration, old_callCount, old_allBufCount, old_dropBatchCount =
 			new_totalDuration, new_callCount, new_allBufCount, new_dropBatchCount

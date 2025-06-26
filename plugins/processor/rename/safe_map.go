@@ -2,7 +2,6 @@ package rename
 
 import (
 	"hash/fnv"
-	"log"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -14,14 +13,19 @@ type AppStatShard struct {
 }
 
 type AppSizeAggregator struct {
-	shards []AppStatShard
+	shards    []AppStatShard
+	shardsLen uint32
 }
 
-func NewAppSizeAggregator() *AppSizeAggregator {
+func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
 	a := &AppSizeAggregator{
-		shards: make([]AppStatShard, shardCount),
+		shardsLen: defaultShardLen,
 	}
-	for i := range shardCount {
+	if len(initShardCount) > 0 && isPowerOf2(initShardCount[0]) {
+		a.shardsLen = initShardCount[0]
+	}
+	a.shards = make([]AppStatShard, a.shardsLen)
+	for i := range a.shards {
 		a.shards[i].stats = make(map[string]*uint64)
 	}
 	return a
@@ -30,7 +34,7 @@ func NewAppSizeAggregator() *AppSizeAggregator {
 func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
 	h := fnv.New32a()
 	h.Write([]byte(key))
-	return &a.shards[h.Sum32()&(shardCount-1)]
+	return &a.shards[h.Sum32()&(a.shardsLen-1)]
 }
 
 func (a *AppSizeAggregator) Add(key string, size int) {
@@ -71,7 +75,7 @@ func (a *AppSizeAggregator) Get(key string) uint64 {
 
 func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
 	result := make(map[string]uint64)
-	for i := range shardCount {
+	for i := range a.shards {
 		shard := &a.shards[i]
 		shard.mu.RLock()
 		for k, v := range shard.stats {
@@ -82,7 +86,8 @@ func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
 	return result
 }
 
-func nextPowerOfTwo(n uint32) uint32 {
+// 分片数量（应为2的幂）
+func nextPower2(n uint32) uint32 {
 	if n <= 1 {
 		return 1
 	}
@@ -98,19 +103,9 @@ func nextPowerOfTwo(n uint32) uint32 {
 	return n
 }
 
-func isPowerOfTwo(n uint32) bool {
-	return n > 0 && (n&(n-1)) == 0
+func isPowerOf2(n uint32) bool {
+	return n > 2 && ((n & (n - 1)) == 0)
 }
 
 // 分片数量（应为2的幂）
-const DefaultShardCount uint32 = 1 << 4
-
-func getShardCount() uint32 {
-	count := max(nextPowerOfTwo(uint32(runtime.NumCPU()*4)), DefaultShardCount)
-	if !isPowerOfTwo(count) {
-		log.Fatal(count, "is not power of 2 (2^N)")
-	}
-	return count
-}
-
-var shardCount = getShardCount()
+var defaultShardLen = max(nextPower2(uint32(runtime.NumCPU()))*4, 4)
