@@ -164,7 +164,7 @@ func genLogTopic(log *protocol.Log) {
 			xLevel = getLogLevel(content.Value)
 		}
 	}
-	aggMap.Add(xContainer+" "+xNamespace, cLen)
+	logBytesAggMap.Add(xContainer+" "+xNamespace, cLen, 1)
 	log.Contents = append(log.Contents, &protocol.Log_Content{
 		Key:   _TopicKey,
 		Value: genTopicName(xNamespace, xContainer),

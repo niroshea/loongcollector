@@ -10,7 +10,7 @@ import (
 
 type AppStatShard struct {
 	mu    sync.RWMutex
-	stats map[string]*uint64
+	stats map[string][]*uint64
 }
 
 type AppSizeAggregator struct {
@@ -31,7 +31,7 @@ func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
 	}
 	a.shards = make([]AppStatShard, a.shardsLen)
 	for i := range a.shards {
-		a.shards[i].stats = make(map[string]*uint64)
+		a.shards[i].stats = make(map[string][]*uint64)
 	}
 	return a
 }
@@ -41,7 +41,7 @@ func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
 	return &a.shards[h&(a.shardsLen-1)]
 }
 
-func (a *AppSizeAggregator) Add(key string, size int) {
+func (a *AppSizeAggregator) Add(key string, bytesLen, logCount int) {
 	shard := a.getShard(key)
 	shard.mu.RLock()
 	counter, ok := shard.stats[key]
@@ -50,13 +50,14 @@ func (a *AppSizeAggregator) Add(key string, size int) {
 		// 如果没有，就写入一个新的
 		shard.mu.Lock()
 		if counter, ok = shard.stats[key]; !ok {
-			shard.stats[key] = new(uint64)
+			shard.stats[key] = []*uint64{new(uint64), new(uint64)}
 			counter = shard.stats[key]
 		}
 		shard.mu.Unlock()
 	}
 	// 原子加
-	atomic.AddUint64(counter, uint64(size))
+	atomic.AddUint64(counter[0], uint64(bytesLen))
+	atomic.AddUint64(counter[1], uint64(logCount))
 }
 
 func (a *AppSizeAggregator) Delete(key string) {
@@ -67,23 +68,23 @@ func (a *AppSizeAggregator) Delete(key string) {
 	shard.mu.Unlock()
 }
 
-func (a *AppSizeAggregator) Get(key string) uint64 {
+func (a *AppSizeAggregator) Get(key string) (uint64, uint64) {
 	shard := a.getShard(key)
 	shard.mu.RLock()
 	defer shard.mu.RUnlock()
 	if val, ok := shard.stats[key]; ok {
-		return atomic.LoadUint64(val)
+		return atomic.LoadUint64(val[0]), atomic.LoadUint64(val[1])
 	}
-	return 0
+	return 0, 0
 }
 
-func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
-	result := make(map[string]uint64)
+func (a *AppSizeAggregator) Snapshot() map[string][]uint64 {
+	result := make(map[string][]uint64)
 	for i := range a.shards {
 		shard := &a.shards[i]
 		shard.mu.RLock()
 		for k, v := range shard.stats {
-			result[k] = atomic.LoadUint64(v)
+			result[k] = []uint64{atomic.LoadUint64(v[0]), atomic.LoadUint64(v[1])}
 		}
 		shard.mu.RUnlock()
 	}

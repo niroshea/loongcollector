@@ -187,7 +187,7 @@ func BenchmarkAppSizeAggregator_Add(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			app := randomApp(apps)
-			agg.Add(app, 300)
+			agg.Add(app, 300, 1)
 		}
 	})
 }
@@ -197,14 +197,14 @@ func BenchmarkAppSizeAggregator_Get(b *testing.B) {
 	apps := generateAppList(200)
 	// 先预写入，确保读取时有数据
 	for i := 0; i < 100000; i++ {
-		agg.Add(randomApp(apps), 300)
+		agg.Add(randomApp(apps), 300, 1)
 	}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			app := randomApp(apps)
-			_ = agg.Get(app)
+			_, _ = agg.Get(app)
 		}
 	})
 }

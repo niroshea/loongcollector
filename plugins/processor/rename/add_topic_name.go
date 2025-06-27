@@ -161,22 +161,20 @@ var levelMap = map[string]string{
 	"debug": "DEBUG",
 }
 
-var aggMap = NewAppSizeAggregator()
+var logBytesAggMap = NewAppSizeAggregator(32)
 
 func performanceLog() {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
-	//old_snapshot := make(map[string]uint64)
+
 	for range ticker.C {
-		new_snapshot := aggMap.Snapshot()
-		for appKey, tBytesN := range new_snapshot {
-			// log.Printf("--- INFO --- [ %s ] total bytes [ %d ],rate [ %.3f MB/s ].\n",
-			// 	appKey, tBytesN, float64(tBytesN-old_snapshot[appKey])/60/1024/1024)
+		bytes_snapshot := logBytesAggMap.Snapshot()
+		for appKey, value := range bytes_snapshot {
 			if app, ns, ok := getAppNs(appKey); ok {
-				bytesWrittenVec.WithLabelValues(app, ns).Set(float64(tBytesN))
+				bytesWrittenVec.WithLabelValues(app, ns).Set(float64(value[0]))
+				countWrittenVec.WithLabelValues(app, ns).Set(float64(value[1]))
 			}
 		}
-		//old_snapshot = new_snapshot
 	}
 }
 
@@ -184,12 +182,17 @@ func clearAggMap() { // 间隔清理数据，如果间隔内 key 没有产生数
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
 
-	old_snapshot := make(map[string]uint64)
+	old_snapshot := make(map[string][]uint64)
 	for range ticker.C {
-		new_snapshot := aggMap.Snapshot()
+		new_snapshot := logBytesAggMap.Snapshot()
 		for appKey, tSize := range new_snapshot {
-			if tSize-old_snapshot[appKey] < 1 {
-				aggMap.Delete(appKey)
+			newBsize := tSize[0]
+			var oldBsize uint64
+			if len(old_snapshot[appKey]) > 0 {
+				oldBsize = old_snapshot[appKey][0]
+			}
+			if newBsize-oldBsize < 1 {
+				logBytesAggMap.Delete(appKey)
 			}
 		}
 		old_snapshot = new_snapshot
@@ -207,7 +210,15 @@ func getAppNs(key string) (app, ns string, ok bool) {
 var bytesWrittenVec = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "log_convergence_app_bytes_written_total",
-		Help: "Total number of bytes written by app",
+		Help: "Total number of log bytes written by app",
+	},
+	[]string{"log_container", "log_namespace"},
+)
+
+var countWrittenVec = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "log_convergence_app_count_written_total",
+		Help: "Total count of logs written by app",
 	},
 	[]string{"log_container", "log_namespace"},
 )
@@ -216,7 +227,7 @@ func init() {
 	// 创建一个新的注册器，不注册默认的 Go 和进程指标
 	reg := prometheus.NewRegistry()
 
-	reg.MustRegister(bytesWrittenVec)
+	reg.MustRegister(bytesWrittenVec, countWrittenVec)
 
 	// 暴露自定义注册器的 /metrics 接口
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
