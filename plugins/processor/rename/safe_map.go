@@ -21,8 +21,12 @@ func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
 	a := &AppSizeAggregator{
 		shardsLen: defaultShardLen,
 	}
-	if len(initShardCount) > 0 && isPowerOf2(initShardCount[0]) {
-		a.shardsLen = initShardCount[0]
+	if len(initShardCount) > 0 {
+		if isPowerOf2(initShardCount[0]) {
+			a.shardsLen = initShardCount[0]
+		} else {
+			panic("input shard count need > 2 and need 2^N")
+		}
 	}
 	a.shards = make([]AppStatShard, a.shardsLen)
 	for i := range a.shards {
@@ -107,5 +111,5 @@ func isPowerOf2(n uint32) bool {
 	return n > 2 && ((n & (n - 1)) == 0)
 }
 
-// 分片数量（应为2的幂）
+// 分片数量（应为2的幂）,最小为4
 var defaultShardLen = max(nextPower2(uint32(runtime.NumCPU()))*4, 4)
