@@ -1,10 +1,11 @@
 package rename
 
 import (
-	"hash/fnv"
 	"runtime"
 	"sync"
 	"sync/atomic"
+
+	xxhash "github.com/cespare/xxhash/v2"
 )
 
 type AppStatShard struct {
@@ -36,9 +37,8 @@ func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
 }
 
 func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
-	h := fnv.New32a()
-	h.Write([]byte(key))
-	return &a.shards[h.Sum32()&(a.shardsLen-1)]
+	h := uint32(xxhash.Sum64String(key))
+	return &a.shards[h&(a.shardsLen-1)]
 }
 
 func (a *AppSizeAggregator) Add(key string, size int) {
@@ -88,6 +88,17 @@ func (a *AppSizeAggregator) Snapshot() map[string]uint64 {
 		shard.mu.RUnlock()
 	}
 	return result
+}
+
+func (a *AppSizeAggregator) HashDistribution() []int {
+	perf := make([]int, a.shardsLen)
+	for i := range a.shards {
+		shard := &a.shards[i]
+		shard.mu.RLock()
+		perf[i] = len(shard.stats)
+		shard.mu.RUnlock()
+	}
+	return perf
 }
 
 // 分片数量（应为2的幂）
