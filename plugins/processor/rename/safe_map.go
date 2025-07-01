@@ -37,8 +37,9 @@ func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
 }
 
 func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
-	h := uint32(xxhash.Sum64String(key))
-	return &a.shards[h&(a.shardsLen-1)]
+	h64 := xxhash.Sum64String(key)
+	//------------------------高32位---------低32位--------高16位
+	return &a.shards[(uint32(h64>>32)^uint32(h64)^uint32(h64>>48))&(a.shardsLen-1)]
 }
 
 func (a *AppSizeAggregator) Add(key string, bytesLen, logCount int) {
