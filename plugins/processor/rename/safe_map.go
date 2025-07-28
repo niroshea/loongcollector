@@ -1,12 +1,16 @@
 package rename
 
 import (
-	"runtime"
 	"sync"
 	"sync/atomic"
 
 	xxhash "github.com/cespare/xxhash/v2"
 )
+
+// 素数求模，散列程度更好 11, 13, 17, 19,23, 29,31, 37,41, 43, 47,53, 59,61, 67,71, 73, 79
+// const 常数求模，编译器优化后，性能与位运算差不多
+// 分片并不是越大越好，CPU核数*4左右在通常情况下较优
+const shardsLen = 31
 
 type AppStatShard struct {
 	mu    sync.RWMutex
@@ -14,23 +18,14 @@ type AppStatShard struct {
 }
 
 type AppSizeAggregator struct {
-	shards    []AppStatShard
-	shardsLen uint32
+	shards []AppStatShard
 }
 
-func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
+func NewAppSizeAggregator() *AppSizeAggregator {
 	a := &AppSizeAggregator{
-		shardsLen: defaultShardLen,
+		shards: make([]AppStatShard, shardsLen),
 	}
-	if len(initShardCount) > 0 {
-		if isPowerOf2(initShardCount[0]) {
-			a.shardsLen = initShardCount[0]
-		} else {
-			panic("input shard count need > 2 and need 2^N")
-		}
-	}
-	a.shards = make([]AppStatShard, a.shardsLen)
-	for i := range a.shards {
+	for i := range shardsLen {
 		a.shards[i].stats = make(map[string][]*uint64)
 	}
 	return a
@@ -38,8 +33,7 @@ func NewAppSizeAggregator(initShardCount ...uint32) *AppSizeAggregator {
 
 func (a *AppSizeAggregator) getShard(key string) *AppStatShard {
 	h64 := xxhash.Sum64String(key)
-	//------------------------高32位---------低32位--------高16位
-	return &a.shards[(uint32(h64>>32)^uint32(h64)^uint32(h64>>48))&(a.shardsLen-1)]
+	return &a.shards[h64%shardsLen]
 }
 
 func (a *AppSizeAggregator) Add(key string, bytesLen, logCount int) {
@@ -80,8 +74,8 @@ func (a *AppSizeAggregator) Get(key string) (uint64, uint64) {
 }
 
 func (a *AppSizeAggregator) Snapshot() map[string][]uint64 {
-	result := make(map[string][]uint64)
-	for i := range a.shards {
+	result := make(map[string][]uint64, shardsLen)
+	for i := range shardsLen {
 		shard := &a.shards[i]
 		shard.mu.RLock()
 		for k, v := range shard.stats {
@@ -93,7 +87,7 @@ func (a *AppSizeAggregator) Snapshot() map[string][]uint64 {
 }
 
 func (a *AppSizeAggregator) HashDistribution() []int {
-	perf := make([]int, a.shardsLen)
+	perf := make([]int, shardsLen)
 	for i := range a.shards {
 		shard := &a.shards[i]
 		shard.mu.RLock()
@@ -102,27 +96,3 @@ func (a *AppSizeAggregator) HashDistribution() []int {
 	}
 	return perf
 }
-
-// 分片数量（应为2的幂）
-func nextPower2(n uint32) uint32 {
-	if n <= 1 {
-		return 1
-	}
-	n--
-
-	n |= n >> 1
-	n |= n >> 2
-	n |= n >> 4
-	n |= n >> 8
-	n |= n >> 16
-
-	n++
-	return n
-}
-
-func isPowerOf2(n uint32) bool {
-	return n > 2 && ((n & (n - 1)) == 0)
-}
-
-// 分片数量（应为2的幂）,最小为4
-var defaultShardLen = max(nextPower2(uint32(runtime.NumCPU()))*4, 4)

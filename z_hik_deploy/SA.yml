@@ -1,0 +1,218 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: loongcollector-ds
+  namespace: kube-system
+  labels:
+    k8s-app: loongcollector-ds
+spec:
+  selector:
+    matchLabels:
+      k8s-app: loongcollector-ds
+  template:
+    metadata:
+      labels:
+        k8s-app: loongcollector-ds
+    spec:
+      volumes:
+        - name: run
+          hostPath:
+            path: /var/run
+            type: Directory
+        - name: root
+          hostPath:
+            path: /
+            type: Directory
+        - name: checkpoint
+          hostPath:
+            path: /etc/loongcollector-ds/checkpoint
+            type: DirectoryOrCreate
+        - name: user-config
+          configMap:
+            name: loongcollector-user-cm
+            defaultMode: 420
+      containers:
+        - name: loongcollector
+          image: >-
+            hpc-sa-prod-jcr-inner.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t60
+          ports:
+            - name: http-metrics
+              hostPort: 8080
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: cpu_usage_limit
+              value: '2'
+            - name: mem_usage_limit
+              value: '1024'
+          resources:
+            limits:
+              cpu: '2'
+              memory: 1Gi
+            requests:
+              cpu: 400m
+              memory: 384Mi
+          volumeMounts:
+            - name: run
+              mountPath: /var/run
+            - name: root
+              readOnly: true
+              mountPath: /logtail_host
+              mountPropagation: HostToContainer
+            - name: checkpoint
+              mountPath: /usr/local/loongcollector/data
+            - name: user-config
+              readOnly: true
+              mountPath: /usr/local/loongcollector/conf/continuous_pipeline_config/local
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: 7953
+              scheme: HTTP
+            initialDelaySeconds: 3
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /usr/local/loongcollector/loongcollector_control.sh
+                  - stop
+                  - '3'
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: IfNotPresent
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirstWithHostNet
+      hostNetwork: true
+      securityContext: {}
+      imagePullSecrets:
+        - name: opsmgr-pullimage-secret
+      schedulerName: default-scheduler
+      tolerations:
+        - operator: Exists
+        - key: kos.io/resourcepool
+          operator: Exists
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  revisionHistoryLimit: 10
+---
+
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: loongcollector-user-cm
+  namespace: kube-system
+data:
+  hik_processor_rename.yaml: |
+    enable: false
+    project:
+      convergence:
+        log_group1:
+          retention: 14
+          apps:
+            - hpcarc
+            - ccfmss
+            - hccvims
+            - ccfres
+            - hpcvmsres
+            - hccacs
+      ym:
+        log_group2:
+          retention: 14
+          apps:
+            - app7
+    es_bulk_config:
+      goroutine: 40
+      batch_size_mb: 8
+      default_log_queue_size: 1000
+      default_loggroup_queue_size: 50
+      buffer_chan_size: 200
+  nginx_stdout.yaml: |-
+    enable: true
+    global:
+      DefaultLogGroupQueueSize: 50
+    inputs:
+      - Type: service_docker_stdout
+        BeginLineRegex: \d{4}-\d{2}-\d{2}
+        BeginLineCheckLength: 11
+    processors:
+      - Type: processor_drop
+        DropKeys:
+          - "_source_"
+          - "_pod_uid_"
+          - "_container_ip_"
+          - "_image_name_"
+          - "__time__"
+      - Type: processor_rename
+        SourceKeys:
+          - "_time_"
+          - "_container_name_"
+          - "_pod_name_"
+          - "_namespace_"
+          - "content"
+        DestKeys:
+          - "@timestamp"
+          - "container"
+          - "pod"
+          - "namespace"
+          - "message"
+    flushers:
+      - Type: flusher_elasticsearch
+        Addresses:
+          - http://10.226.0.33:9200
+        Convert:
+          Protocol: custom_single_flatten
+          Encoding: json
+          TagFieldsRename:
+            "__host_ip__": node
+        Index: "%{content.topic}"
+        Authentication:
+          PlainText:
+            Username: elastic
+            Password: TE3h1xA7xsjypIrM+DJF
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: loongcollector-svc
+  namespace: kube-system
+  labels:
+    k8s-app: loongcollector-ds
+spec:
+  ports:
+    - name: http-metrics
+      protocol: TCP
+      port: 8080
+      targetPort: http-metrics
+  selector:
+    k8s-app: loongcollector-ds
+  type: ClusterIP
+  sessionAffinity: None
+---
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    k8s-app: loongcollector-ds
+  name: loongcollector
+  namespace: kube-system
+spec:
+  endpoints:
+    - interval: 30s
+      path: /metrics
+      port: http-metrics
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      k8s-app: loongcollector-ds

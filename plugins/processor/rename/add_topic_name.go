@@ -161,7 +161,7 @@ var levelMap = map[string]string{
 	"debug": "DEBUG",
 }
 
-var logBytesAggMap = NewAppSizeAggregator(32)
+var logBytesAggMap = NewAppSizeAggregator()
 
 func performanceLog() {
 	ticker := time.NewTicker(15 * time.Second)

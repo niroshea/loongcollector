@@ -209,8 +209,16 @@ func BenchmarkAppSizeAggregator_Get(b *testing.B) {
 	})
 }
 
-func TestX002(t *testing.T) {
-	for i := 1; i < 100; i++ {
-		fmt.Printf("%d  next power2 is %d\n", i, nextPower2(uint32(i)))
+func BenchmarkMod31(b *testing.B) {
+	var x uint64 = 123456789123456789
+	for i := 0; i < b.N; i++ {
+		_ = x % 31
+	}
+}
+
+func BenchmarkMod31_bit(b *testing.B) {
+	var x uint64 = 123456789123456789
+	for i := 0; i < b.N; i++ {
+		_ = x & 31
 	}
 }
