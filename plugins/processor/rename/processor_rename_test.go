@@ -162,7 +162,7 @@ func TestNoKeyErrorV2(t *testing.T) {
 }
 
 func TestX001(t *testing.T) {
-	fmt.Println(genTopicName("ym-sgp-prod", "hpcarc"))
+	fmt.Println(genTopicName("ym-sgp-prod", "hpcarc", ""))
 
 	fmt.Println(getLogLevel("2025-06-13 15:38:30.584          service/12_local_hiklink.go:130"))
 }
@@ -221,4 +221,8 @@ func BenchmarkMod31_bit(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = x & 31
 	}
+}
+
+func TestX009(t *testing.T) {
+	fmt.Println(fastMatchFromEnd("2025-08-07T08:33:30.020Z INFO ccfwebhook [xxl-job,JobThread [M] -20 [ sd"))
 }

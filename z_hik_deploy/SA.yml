@@ -96,12 +96,7 @@ spec:
         - operator: Exists
         - key: kos.io/resourcepool
           operator: Exists
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 0
-  revisionHistoryLimit: 10
+
 ---
 
 kind: ConfigMap

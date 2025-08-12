@@ -15,8 +15,6 @@ spec:
         k8s-app: loongcollector-ds
     spec:
       volumes:
-        - name: shared-data
-          emptyDir: {}
         - name: run
           hostPath:
             path: /var/run
@@ -34,24 +32,9 @@ spec:
             name: loongcollector-user-cm
             defaultMode: 420
       containers:
-        - name: loongcollector-go-log
-          image: >-
-            hpc-eu-prod-jcr-inner.hik-proconnect.com/docker-ipsc/usta/middleware/busybox:1.37.0_t1
-          command:
-            - /bin/sh
-            - '-c'
-          args:
-            - sleep 10s && tail -n 1000 -F /usr/local/loongcollector/log/*
-          resources: {}
-          volumeMounts:
-            - name: shared-data
-              mountPath: /usr/local/loongcollector/log
-          terminationMessagePath: /dev/termination-log
-          terminationMessagePolicy: File
-          imagePullPolicy: IfNotPresent
         - name: loongcollector
           image: >-
-            hpc-eu-prod-jcr-inner.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t58
+            hpc-us-prod-jcr-inner.hik-proconnect.com/docker-ipsc/usta/middleware/loongcollector:3.0.11_t60
           ports:
             - name: http-metrics
               hostPort: 8080
@@ -59,9 +42,9 @@ spec:
               protocol: TCP
           env:
             - name: cpu_usage_limit
-              value: '1'
+              value: '2'
             - name: mem_usage_limit
-              value: '512'
+              value: '1024'
           resources:
             limits:
               cpu: '2'
@@ -81,8 +64,6 @@ spec:
             - name: user-config
               readOnly: true
               mountPath: /usr/local/loongcollector/conf/continuous_pipeline_config/local
-            - name: shared-data
-              mountPath: /usr/local/loongcollector/log
           livenessProbe:
             httpGet:
               path: /liveness
@@ -180,7 +161,7 @@ data:
     flushers:
       - Type: flusher_elasticsearch
         Addresses:
-          - http://10.225.0.49:9200
+          - http://10.229.0.90:9200
         Convert:
           Protocol: custom_single_flatten
           Encoding: json
@@ -221,7 +202,7 @@ metadata:
   namespace: kube-system
 spec:
   endpoints:
-    - interval: 15s
+    - interval: 30s
       path: /metrics
       port: http-metrics
   namespaceSelector:

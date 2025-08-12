@@ -27,8 +27,8 @@ type ProjLogGroup struct {
 }
 
 // 索引模板名称格式 IndexPatterns(ismDays, appName) + _index_template  .ds-convergence-7-days-2025.06.06-000236
-func IndexPatterns(project string, retention int) string { //convergence-7-days
-	return project + "-" + strconv.Itoa(retention) + "-days"
+func IndexPatterns(project string, retention string) string { //convergence-7-days
+	return project + "-" + retention + "-days"
 }
 
 var projectRegxMap = make(map[string]*regexp.Regexp)
@@ -53,17 +53,20 @@ func init() {
 		tmpAppMap := make(map[string]string)
 		for _, group := range logGroups {
 			for _, app := range group.Apps {
-				tmpAppMap[app] = IndexPatterns(projectName, group.Retention)
+				if group.Retention < 7 {
+					group.Retention = 7
+				}
+				tmpAppMap[app] = IndexPatterns(projectName, strconv.Itoa(group.Retention))
 			}
 		}
-		tmpAppMap[DefaultMapKey] = IndexPatterns(projectName, 7)
+		tmpAppMap[DefaultMapKey] = IndexPatterns(projectName, "7")
 		projectAppMap[projectName] = tmpAppMap
 	}
 	go performanceLog()
 	go clearAggMap()
 }
 
-func genTopicName(namespace, container interface{}) string {
+func genTopicName(namespace, container interface{}, retention string) string {
 	namespaceStr, containerStr := namespace.(string), container.(string)
 	var project = DefaultProject
 	for proj := range projectRegxMap {
@@ -71,6 +74,9 @@ func genTopicName(namespace, container interface{}) string {
 			project = proj
 			break
 		}
+	}
+	if project == DefaultProject && retention != "" {
+		return IndexPatterns(DefaultProject, retention)
 	}
 	if index, ok := projectAppMap[project][containerStr]; ok {
 		return index
@@ -121,6 +127,10 @@ func getLogLevel(logContent string) string {
 	return "NULL"
 }
 
+func genIndexRetention(logContent string) string {
+	return fastMatchFromEnd(shortLog200(logContent))
+}
+
 func shortLog(s string) string {
 	if len(s) <= 50 {
 		return s
@@ -130,6 +140,37 @@ func shortLog(s string) string {
 		end--
 	}
 	return s[:end]
+}
+
+func shortLog200(s string) string {
+	if len(s) <= 200 {
+		return s
+	}
+	end := 200
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end]
+}
+
+func fastMatchFromEnd(s string) string {
+	sLen := len(s)
+	if sLen < 60 {
+		return ""
+	}
+	for i := sLen - 5; i >= 55; i-- {
+		if s[i] == ' ' && s[i+4] == ' ' && s[i+1] == '[' && s[i+3] == ']' {
+			switch s[i+2] {
+			case 'M':
+				return "14"
+			case 'T':
+				return "21"
+			case 'L':
+				return "28"
+			}
+		}
+	}
+	return ""
 }
 
 var levelRegex *regexp.Regexp
