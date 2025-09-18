@@ -205,11 +205,13 @@ var levelMap = map[string]string{
 var logBytesAggMap = NewAppSizeAggregator()
 
 func performanceLog() {
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(13 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		bytes_snapshot := logBytesAggMap.Snapshot()
+		bytesWrittenVec.Reset()
+		countWrittenVec.Reset()
 		for appKey, value := range bytes_snapshot {
 			if app, ns, ok := getAppNs(appKey); ok {
 				bytesWrittenVec.WithLabelValues(app, ns).Set(float64(value[0]))
